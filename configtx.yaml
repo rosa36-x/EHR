@@ -1,0 +1,250 @@
+# configtx.yaml
+# MedVault EHR Network — Fabric 2.5 Channel Participation Style
+#
+# KEY DIFFERENCE FROM LEGACY:
+#   No "Consortiums" block. No system-channel genesis profile.
+#   We use a single "MedVaultChannel" application-channel profile.
+#   The orderer is bootstrapped via the channel participation API (osnadmin),
+#   NOT via a pre-generated genesis.block file.
+#
+# Profile used:
+#   configtxgen -profile MedVaultChannel -outputBlock genesis.block -channelID medchannel
+
+---
+################################################################################
+# ORGANIZATIONS
+################################################################################
+Organizations:
+
+  - &OrdererOrg
+    Name: OrdererMSP
+    ID: OrdererMSP
+    MSPDir: organizations/ordererOrganizations/medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+      # Orderer orgs need an Endorsement policy in Fabric 2.x
+      Endorsement:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+
+  - &Hospital
+    Name: HospitalMSP
+    ID: HospitalMSP
+    MSPDir: organizations/peerOrganizations/hospital.medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin', 'HospitalMSP.peer', 'HospitalMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin', 'HospitalMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('HospitalMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.hospital.medvault.com
+        Port: 7051
+
+  - &Laboratory
+    Name: LaboratoryMSP
+    ID: LaboratoryMSP
+    MSPDir: organizations/peerOrganizations/laboratory.medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('LaboratoryMSP.admin', 'LaboratoryMSP.peer', 'LaboratoryMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('LaboratoryMSP.admin', 'LaboratoryMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('LaboratoryMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('LaboratoryMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.laboratory.medvault.com
+        Port: 8051
+
+  - &Governance
+    Name: GovernanceMSP
+    ID: GovernanceMSP
+    MSPDir: organizations/peerOrganizations/governance.medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('GovernanceMSP.admin', 'GovernanceMSP.peer', 'GovernanceMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('GovernanceMSP.admin', 'GovernanceMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('GovernanceMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('GovernanceMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.governance.medvault.com
+        Port: 9051
+
+  # Skeleton orgs — MSP defined, no anchor peers yet
+  - &Pharmacy
+    Name: PharmacyMSP
+    ID: PharmacyMSP
+    MSPDir: organizations/peerOrganizations/pharmacy.medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('PharmacyMSP.admin', 'PharmacyMSP.peer', 'PharmacyMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('PharmacyMSP.admin', 'PharmacyMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('PharmacyMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('PharmacyMSP.peer')"
+
+  - &Research
+    Name: ResearchMSP
+    ID: ResearchMSP
+    MSPDir: organizations/peerOrganizations/research.medvault.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('ResearchMSP.admin', 'ResearchMSP.peer', 'ResearchMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('ResearchMSP.admin', 'ResearchMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('ResearchMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('ResearchMSP.peer')"
+
+################################################################################
+# CAPABILITIES
+################################################################################
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_5: true
+
+################################################################################
+# APPLICATION DEFAULTS
+################################################################################
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+################################################################################
+# ORDERER DEFAULTS
+################################################################################
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.medvault.com:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.medvault.com
+        Port: 7050
+        # These certs must exist BEFORE configtxgen runs (generated by registerEnroll.sh)
+        ClientTLSCert: organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls/server.crt
+        ServerTLSCert: organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls/server.crt
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+  Capabilities:
+    <<: *OrdererCapabilities
+
+################################################################################
+# CHANNEL DEFAULTS
+################################################################################
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+################################################################################
+# PROFILES
+#
+# ONE profile only — no system-channel genesis.
+# This block IS the channel genesis block, written directly to the orderer
+# via:  osnadmin channel join --channelID medchannel --config-block genesis.block
+################################################################################
+Profiles:
+
+  MedVaultChannel:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Hospital
+        - *Laboratory
+        - *Governance
+        - *Pharmacy
+        - *Research
+      Capabilities: *ApplicationCapabilities

@@ -1,0 +1,21 @@
+# Fabric crypto material (DO NOT COMMIT)
+organizations/
+crypto-config/
+msp/
+wallet/
+tls/
+
+# Ledger / generated artifacts
+*.block
+*.tx
+*.tar
+ledger/
+
+# Docker runtime files
+docker-compose.override.yml
+
+# Environment files
+.env
+
+# Node modules (if any app exists later)
+node_modules/

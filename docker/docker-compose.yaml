@@ -1,0 +1,384 @@
+# docker/docker-compose.yaml
+# MedVault EHR Network — Fabric 2.5
+#
+# BOOTSTRAP METHOD: Channel Participation API (osnadmin)
+#   - ORDERER_GENERAL_BOOTSTRAPMETHOD is NOT set (defaults to "none")
+#   - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+#   - The orderer does NOT need a genesis.block volume mount at startup
+#   - The channel genesis block is delivered via: osnadmin channel join
+#
+# REMOVED from original:
+#   - ORDERER_GENERAL_BOOTSTRAPMETHOD=file       ← incompatible with channel participation
+#   - ORDERER_GENERAL_BOOTSTRAPFILE=...          ← not needed
+#   - genesis.block volume mount on orderer      ← not needed
+#   - version: "3"                               ← obsolete, causes WARN
+
+networks:
+  medvault:
+    name: medvault
+
+volumes:
+  orderer.medvault.com:
+  peer0.hospital.medvault.com:
+  peer0.laboratory.medvault.com:
+  peer0.governance.medvault.com:
+  peer0.pharmacy.medvault.com:
+  peer0.research.medvault.com:
+
+services:
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # FABRIC CA SERVERS — one per org
+  # ════════════════════════════════════════════════════════════════════════════
+
+  ca.orderer.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.orderer.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-orderer
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=7054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:17054
+    ports:
+      - 7054:7054
+      - 17054:17054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/ordererOrg:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  ca.hospital.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.hospital.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-hospital
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=8054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:18054
+    ports:
+      - 8054:8054
+      - 18054:18054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/hospital:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  ca.laboratory.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.laboratory.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-laboratory
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=9054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:19054
+    ports:
+      - 9054:9054
+      - 19054:19054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/laboratory:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  ca.governance.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.governance.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-governance
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=10054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:20054
+    ports:
+      - 10054:10054
+      - 20054:20054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/governance:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  ca.pharmacy.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.pharmacy.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-pharmacy
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=11054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:21054
+    ports:
+      - 11054:11054
+      - 21054:21054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/pharmacy:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  ca.research.medvault.com:
+    image: hyperledger/fabric-ca:1.5
+    container_name: ca.research.medvault.com
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-research
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=12054
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:22054
+    ports:
+      - 12054:12054
+      - 22054:22054
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    volumes:
+      - ../organizations/fabric-ca/research:/etc/hyperledger/fabric-ca-server
+    networks:
+      - medvault
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # ORDERER — Channel Participation Bootstrap (no genesis block file mount)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  orderer.medvault.com:
+    container_name: orderer.medvault.com
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      # TLS for peer/client connections
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      # ── Channel Participation API ──────────────────────────────────────────
+      # Do NOT set ORDERER_GENERAL_BOOTSTRAPMETHOD=file — it conflicts with this
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      # Admin endpoint (osnadmin uses this port)
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+    working_dir: /root
+    command: orderer
+    volumes:
+      # NO genesis.block mount — channel participation doesn't need it
+      - ../organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/msp:/var/hyperledger/orderer/msp
+      - ../organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls:/var/hyperledger/orderer/tls
+      - orderer.medvault.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
+      - 7053:7053
+    networks:
+      - medvault
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # PEERS — Active orgs
+  # ════════════════════════════════════════════════════════════════════════════
+
+  peer0.hospital.medvault.com:
+    container_name: peer0.hospital.medvault.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=medvault
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.hospital.medvault.com
+      - CORE_PEER_ADDRESS=peer0.hospital.medvault.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.hospital.medvault.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital.medvault.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.medvault.com:7051
+      - CORE_PEER_LOCALMSPID=HospitalMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/msp:/etc/hyperledger/fabric/msp
+      - ../organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.hospital.medvault.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 7051:7051
+    networks:
+      - medvault
+
+  peer0.laboratory.medvault.com:
+    container_name: peer0.laboratory.medvault.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=medvault
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.laboratory.medvault.com
+      - CORE_PEER_ADDRESS=peer0.laboratory.medvault.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.laboratory.medvault.com:8052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:8052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.laboratory.medvault.com:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.laboratory.medvault.com:8051
+      - CORE_PEER_LOCALMSPID=LaboratoryMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations/peerOrganizations/laboratory.medvault.com/peers/peer0.laboratory.medvault.com/msp:/etc/hyperledger/fabric/msp
+      - ../organizations/peerOrganizations/laboratory.medvault.com/peers/peer0.laboratory.medvault.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.laboratory.medvault.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 8051:8051
+    networks:
+      - medvault
+
+  peer0.governance.medvault.com:
+    container_name: peer0.governance.medvault.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=medvault
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.governance.medvault.com
+      - CORE_PEER_ADDRESS=peer0.governance.medvault.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.governance.medvault.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.governance.medvault.com:9051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.governance.medvault.com:9051
+      - CORE_PEER_LOCALMSPID=GovernanceMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations/peerOrganizations/governance.medvault.com/peers/peer0.governance.medvault.com/msp:/etc/hyperledger/fabric/msp
+      - ../organizations/peerOrganizations/governance.medvault.com/peers/peer0.governance.medvault.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.governance.medvault.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 9051:9051
+    networks:
+      - medvault
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # PEERS — Skeleton orgs (provisioned, no chaincode this phase)
+  # ════════════════════════════════════════════════════════════════════════════
+
+  peer0.pharmacy.medvault.com:
+    container_name: peer0.pharmacy.medvault.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=medvault
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.pharmacy.medvault.com
+      - CORE_PEER_ADDRESS=peer0.pharmacy.medvault.com:10051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:10051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.pharmacy.medvault.com:10052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:10052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.pharmacy.medvault.com:10051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.pharmacy.medvault.com:10051
+      - CORE_PEER_LOCALMSPID=PharmacyMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations/peerOrganizations/pharmacy.medvault.com/peers/peer0.pharmacy.medvault.com/msp:/etc/hyperledger/fabric/msp
+      - ../organizations/peerOrganizations/pharmacy.medvault.com/peers/peer0.pharmacy.medvault.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.pharmacy.medvault.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 10051:10051
+    networks:
+      - medvault
+
+  peer0.research.medvault.com:
+    container_name: peer0.research.medvault.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=medvault
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.research.medvault.com
+      - CORE_PEER_ADDRESS=peer0.research.medvault.com:11051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:11051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.research.medvault.com:11052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:11052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.research.medvault.com:11051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.research.medvault.com:11051
+      - CORE_PEER_LOCALMSPID=ResearchMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations/peerOrganizations/research.medvault.com/peers/peer0.research.medvault.com/msp:/etc/hyperledger/fabric/msp
+      - ../organizations/peerOrganizations/research.medvault.com/peers/peer0.research.medvault.com/tls:/etc/hyperledger/fabric/tls
+      - peer0.research.medvault.com:/var/hyperledger/production
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 11051:11051
+    networks:
+      - medvault
+
+  # ════════════════════════════════════════════════════════════════════════════
+  # CLI — defaults to Hospital peer admin context
+  # Switch orgs by overriding CORE_PEER_* env vars in your shell scripts
+  # ════════════════════════════════════════════════════════════════════════════
+
+  cli:
+    container_name: cli
+    image: hyperledger/fabric-tools:2.5
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=cli
+      - CORE_PEER_ADDRESS=peer0.hospital.medvault.com:7051
+      - CORE_PEER_LOCALMSPID=HospitalMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/peerOrganizations/hospital.medvault.com/users/Admin@hospital.medvault.com/msp
+      - ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls/ca.crt
+      - ORDERER_ADMIN_TLS_SIGN_CERT=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATE_KEY=/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations/ordererOrganizations/medvault.com/orderers/orderer.medvault.com/tls/server.key
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+      - /var/run/docker.sock:/host/var/run/docker.sock
+      - ../organizations:/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations
+      - ../channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+    networks:
+      - medvault
