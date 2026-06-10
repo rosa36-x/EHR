@@ -30,10 +30,7 @@ Organizations:
       Admins:
         Type: Signature
         Rule: "OR('OrdererMSP.admin')"
-      # Orderer orgs need an Endorsement policy in Fabric 2.x
-      Endorsement:
-        Type: Signature
-        Rule: "OR('OrdererMSP.member')"
+      
 
   - &Hospital
     Name: HospitalMSP
