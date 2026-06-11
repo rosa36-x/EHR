@@ -243,7 +243,7 @@ function enrollPeerOrg() {
 # ── ENROLL ALL PEER ORGS ──────────────────────────────────────────────────────
 
 # Active orgs — with app-level users
-enrollPeerOrg "hospital"    8054  "ca-hospital"    "hospital.medvault.com"    "doctor1:doctor1pw"
+enrollPeerOrg "hospital"    8054  "ca-hospital"    "hospital.medvault.com"    "doctor1:doctor1pw patient1:patient1pw"
 enrollPeerOrg "laboratory"  9054  "ca-laboratory"  "laboratory.medvault.com"  "labtech1:labtech1pw"
 enrollPeerOrg "governance"  10054 "ca-governance"  "governance.medvault.com"  ""
 

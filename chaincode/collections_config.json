@@ -1,0 +1,38 @@
+[
+  {
+    "name": "PatientRecordCollection",
+    "policy": "OR('HospitalMSP.member')",
+    "requiredPeerCount": 1,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true
+  },
+  {
+    "name": "ConsentCollection",
+    "policy": "OR('HospitalMSP.member')",
+    "requiredPeerCount": 1,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true
+  },
+  {
+    "name": "PrescriptionCollection",
+    "policy": "OR('HospitalMSP.member', 'PharmacyMSP.member')",
+    "requiredPeerCount": 1,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true
+  },
+  {
+    "name": "LabReportCollection",
+    "policy": "OR('HospitalMSP.member', 'LaboratoryMSP.member')",
+    "requiredPeerCount": 1,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true
+  }
+]
