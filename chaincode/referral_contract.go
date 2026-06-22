@@ -50,3 +50,27 @@ func (s *SmartContract) CreateReferral(
 
 	return ctx.GetStub().PutState(referralID, referralJSON)
 }
+
+func (s *SmartContract) GetReferral(
+	ctx contractapi.TransactionContextInterface,
+	referralID string,
+) (*models.Referral, error) {
+
+	referralJSON, err := ctx.GetStub().GetState(referralID)
+	if err != nil {
+		return nil, err
+	}
+
+	if referralJSON == nil {
+		return nil, fmt.Errorf("referral %s does not exist", referralID)
+	}
+
+	var referral models.Referral
+
+	err = json.Unmarshal(referralJSON, &referral)
+	if err != nil {
+		return nil, err
+	}
+
+	return &referral, nil
+}
