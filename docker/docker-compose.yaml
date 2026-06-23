@@ -380,5 +380,8 @@ services:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations:/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations
       - ../channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+      - ../chaincode:/opt/gopath/src/github.com/hyperledger/fabric/peer/chaincode
+      - ../setPeer.sh:/opt/gopath/src/github.com/hyperledger/fabric/peer/setPeer.sh
+
     networks:
       - medvault

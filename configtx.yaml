@@ -95,7 +95,6 @@ Organizations:
       - Host: peer0.governance.medvault.com
         Port: 9051
 
-  # Skeleton orgs — MSP defined, no anchor peers yet
   - &Pharmacy
     Name: PharmacyMSP
     ID: PharmacyMSP
@@ -245,3 +244,8 @@ Profiles:
         - *Pharmacy
         - *Research
       Capabilities: *ApplicationCapabilities
+      
+    # Clinical-first system enforced at chaincode level:
+    # Tier 1: Hospital + Laboratory (mandatory for EHR writes)
+    # Tier 2: Governance (compliance-sensitive tx)
+    # Tier 3: Pharmacy / Research (context-specific)
