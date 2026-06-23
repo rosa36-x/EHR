@@ -20,4 +20,4 @@ docker-compose.override.yml
 # Node modules (if any app exists later)
 node_modules/
 # Go build output
-chaincode
+chaincode/chaincode
