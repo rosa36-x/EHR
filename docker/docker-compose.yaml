@@ -205,6 +205,10 @@ services:
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.medvault.com:7051
       - CORE_PEER_LOCALMSPID=HospitalMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_PEER_GOSSIP_USELEADERELECTION=true
+      - CORE_PEER_GOSSIP_ORGLEADER=false
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.medvault.com:7051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital.medvault.com:7051
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations/peerOrganizations/hospital.medvault.com/peers/peer0.hospital.medvault.com/msp:/etc/hyperledger/fabric/msp
@@ -237,6 +241,10 @@ services:
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.laboratory.medvault.com:8051
       - CORE_PEER_LOCALMSPID=LaboratoryMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_PEER_GOSSIP_USELEADERELECTION=true
+      - CORE_PEER_GOSSIP_ORGLEADER=false
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.laboratory.medvault.com:8051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.laboratory.medvault.com:8051
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations/peerOrganizations/laboratory.medvault.com/peers/peer0.laboratory.medvault.com/msp:/etc/hyperledger/fabric/msp
@@ -269,6 +277,10 @@ services:
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.governance.medvault.com:9051
       - CORE_PEER_LOCALMSPID=GovernanceMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_PEER_GOSSIP_USELEADERELECTION=true
+      - CORE_PEER_GOSSIP_ORGLEADER=false
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.governance.medvault.com:9051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.governance.medvault.com:9051
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations/peerOrganizations/governance.medvault.com/peers/peer0.governance.medvault.com/msp:/etc/hyperledger/fabric/msp
@@ -305,6 +317,10 @@ services:
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.pharmacy.medvault.com:10051
       - CORE_PEER_LOCALMSPID=PharmacyMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_PEER_GOSSIP_USELEADERELECTION=true
+      - CORE_PEER_GOSSIP_ORGLEADER=false
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.pharmacy.medvault.com:10051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.pharmacy.medvault.com:10051  
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations/peerOrganizations/pharmacy.medvault.com/peers/peer0.pharmacy.medvault.com/msp:/etc/hyperledger/fabric/msp
@@ -337,6 +353,10 @@ services:
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.research.medvault.com:11051
       - CORE_PEER_LOCALMSPID=ResearchMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_PEER_GOSSIP_USELEADERELECTION=true
+      - CORE_PEER_GOSSIP_ORGLEADER=false
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.research.medvault.com:11051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.research.medvault.com:11051
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ../organizations/peerOrganizations/research.medvault.com/peers/peer0.research.medvault.com/msp:/etc/hyperledger/fabric/msp

@@ -9,6 +9,7 @@ tls/
 *.block
 *.tx
 *.tar
+*.tar.gz
 ledger/
 
 # Docker runtime files
@@ -21,3 +22,4 @@ docker-compose.override.yml
 node_modules/
 # Go build output
 chaincode/chaincode
+
