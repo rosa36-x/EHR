@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreateEmergencyAccess(
 	ctx contractapi.TransactionContextInterface,
@@ -17,6 +18,13 @@ func (s *SmartContract) CreateEmergencyAccess(
 	timestamp string,
 ) error {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"CREATE_EMERGENCY_ACCESS",
+	)
+	if err != nil {
+		return err
+	}
 	exists, err := ctx.GetStub().GetState(emergencyAccessID)
 	if err != nil {
 		return err
@@ -47,6 +55,13 @@ func (s *SmartContract) GetEmergencyAccess(
 	emergencyAccessID string,
 ) (*models.EmergencyAccess, error) {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_EMERGENCY_ACCESS",
+	)
+	if err != nil {
+		return nil, err
+	}
 	emergencyJSON, err := ctx.GetStub().GetState(emergencyAccessID)
 	if err != nil {
 		return nil, err

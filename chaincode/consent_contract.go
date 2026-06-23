@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 
 func (s *SmartContract) GrantConsent(
@@ -21,6 +22,13 @@ func (s *SmartContract) GrantConsent(
 	updatedAt string,
 ) error {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"GRANT_CONSENT",
+	)
+	if err != nil {
+		return err
+	}
 	exists, err := assetExistsInCollection(
 		ctx,
 		ConsentCollection,
@@ -61,6 +69,13 @@ func (s *SmartContract) GetConsent(
 	ctx contractapi.TransactionContextInterface,
 	consentID string,
 ) (*models.Consent, error) {
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_CONSENT",
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	consentJSON, err := ctx.GetStub().GetPrivateData(
 		ConsentCollection,
@@ -87,6 +102,13 @@ func (s *SmartContract) CheckConsent(
 	ctx contractapi.TransactionContextInterface,
 	consentID string,
 ) (bool, error) {
+	err := policy.EnforcePolicy(
+		ctx,
+		"CHECK_CONSENT",
+	)
+	if err != nil {
+		return false, err
+	}
 
 	consent, err := s.GetConsent(ctx, consentID)
 	if err != nil {
@@ -104,6 +126,14 @@ func (s *SmartContract) RevokeConsent(
 	consentID string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+		ctx,
+		"REVOKE_CONSENT",
+	)
+	if err != nil {
+		return err
+	}
+
 
 	consent, err := s.GetConsent(ctx, consentID)
 	if err != nil {

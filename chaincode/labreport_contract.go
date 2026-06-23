@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreateLabReport(
 	ctx contractapi.TransactionContextInterface,
@@ -20,6 +21,13 @@ func (s *SmartContract) CreateLabReport(
 	createdAt string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+		ctx,
+		"CREATE_LAB_REPORT",
+	)
+	if err != nil {
+		return err
+	}
 
 	exists, err := assetExistsInCollection(
 		ctx,
@@ -65,6 +73,13 @@ func (s *SmartContract) GetLabReport(
 	ctx contractapi.TransactionContextInterface,
 	reportID string,
 ) (*models.LabReport, error) {
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_LAB_REPORT",
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	reportJSON, err := ctx.GetStub().GetPrivateData(
 		LabReportCollection,
@@ -103,6 +118,13 @@ func (s *SmartContract) UpdateLabReport(
 	status string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+		ctx,
+		"UPDATE_LAB_REPORT",	
+	)
+	if err != nil {
+		return err
+	}
 
 	report, err := s.GetLabReport(
 		ctx,

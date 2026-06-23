@@ -1,11 +1,12 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+    "encoding/json"
+    "fmt"
 
-	"github.com/hyperledger/fabric-contract-api-go/contractapi"
-	"github.com/rosa36-x/EHR/chaincode/models"
+    "github.com/hyperledger/fabric-contract-api-go/contractapi"
+    "github.com/rosa36-x/EHR/chaincode/models"
+    "github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreatePatient(
 	ctx contractapi.TransactionContextInterface,
@@ -21,6 +22,13 @@ func (s *SmartContract) CreatePatient(
 	updatedAt string,
 ) error {
 
+	err := policy.EnforcePolicy(
+    	ctx,
+    	"CREATE_PATIENT_RECORD",
+	)
+	if err != nil {
+    	return err
+	}
 	patient := models.Patient{
 		PatientID:    patientID,
 		FullName:     fullName,
@@ -66,6 +74,13 @@ func (s *SmartContract) GetPatient(
 	patientID string,
 ) (*models.Patient, error) {
 
+	err := policy.EnforcePolicy(
+    	ctx,
+    	"GET_PATIENT_RECORD",
+	)
+	if err != nil {
+    	return nil, err
+	}
 	patientJSON, err := ctx.GetStub().GetPrivateData(
 		PatientCollection,
 		patientID,
@@ -97,6 +112,13 @@ func (s *SmartContract) UpdatePatient(
 	email string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+    	ctx,
+    	"UPDATE_PATIENT_RECORD",
+	)
+	if err != nil {
+    	return err
+	}
 
 	patient, err := s.GetPatient(ctx, patientID)
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreateConsultation(
 	ctx contractapi.TransactionContextInterface,
@@ -21,6 +22,13 @@ func (s *SmartContract) CreateConsultation(
 	updatedAt string,
 ) error {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"CREATE_CONSULTATION",
+	)
+	if err != nil {
+		return err
+	}
 	exists, err := assetExistsInCollection(
 		ctx,
 		PatientCollection,
@@ -62,6 +70,13 @@ func (s *SmartContract) GetConsultation(
 	ctx contractapi.TransactionContextInterface,
 	consultationID string,
 ) (*models.Consultation, error) {
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_CONSULTATION",
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	consultationJSON, err := ctx.GetStub().GetPrivateData(
 		PatientCollection,
@@ -99,6 +114,13 @@ func (s *SmartContract) UpdateConsultation(
 	encryptionKeyRef string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+		ctx,
+		"UPDATE_CONSULTATION",
+	)
+	if err != nil {
+		return err
+	}
 
 	consultation, err := s.GetConsultation(
 		ctx,

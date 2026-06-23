@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreateReferral(
 	ctx contractapi.TransactionContextInterface,
@@ -21,6 +22,13 @@ func (s *SmartContract) CreateReferral(
 	updatedAt string,
 ) error {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"CREATE_REFERRAL",
+	)
+	if err != nil {
+		return err
+	}
 	exists, err := ctx.GetStub().GetState(referralID)
 	if err != nil {
 		return err
@@ -56,6 +64,13 @@ func (s *SmartContract) GetReferral(
 	referralID string,
 ) (*models.Referral, error) {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_REFERRAL",
+	)
+	if err != nil {
+		return nil, err
+	}
 	referralJSON, err := ctx.GetStub().GetState(referralID)
 	if err != nil {
 		return nil, err

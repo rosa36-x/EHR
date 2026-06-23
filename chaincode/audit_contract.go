@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreateAuditLog(
 	ctx contractapi.TransactionContextInterface,
@@ -18,6 +19,13 @@ func (s *SmartContract) CreateAuditLog(
 	timestamp string,
 ) error {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"AUDIT_TRANSACTION",
+	)
+	if err != nil {
+		return err
+	}
 	exists, err := ctx.GetStub().GetState(auditID)
 	if err != nil {
 		return err
@@ -49,6 +57,13 @@ func (s *SmartContract) GetAuditLog(
 	auditID string,
 ) (*models.AuditLog, error) {
 
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_AUDIT_LOG",
+	)
+	if err != nil {
+		return nil, err
+	}
 	auditJSON, err := ctx.GetStub().GetState(auditID)
 	if err != nil {
 		return nil, err

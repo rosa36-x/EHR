@@ -6,6 +6,7 @@ import (
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/rosa36-x/EHR/chaincode/models"
+	"github.com/rosa36-x/EHR/chaincode/policy"
 )
 func (s *SmartContract) CreatePrescription(
 	ctx contractapi.TransactionContextInterface,
@@ -21,6 +22,13 @@ func (s *SmartContract) CreatePrescription(
 	createdAt string,
 	updatedAt string,
 ) error {
+	err := policy.EnforcePolicy(
+		ctx,
+		"CREATE_PRESCRIPTION",
+	)
+	if err != nil {
+		return err
+	}
 
 	exists, err := assetExistsInCollection(
 		ctx,
@@ -67,6 +75,13 @@ func (s *SmartContract) GetPrescription(
 	ctx contractapi.TransactionContextInterface,
 	prescriptionID string,
 ) (*models.Prescription, error) {
+	err := policy.EnforcePolicy(
+		ctx,
+		"GET_PRESCRIPTION",
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	prescriptionJSON, err := ctx.GetStub().GetPrivateData(
 		PrescriptionCollection,
@@ -102,7 +117,13 @@ func (s *SmartContract) UpdatePrescriptionStatus(
 	dispensedAt string,
 	updatedAt string,
 ) error {
-
+	err := policy.EnforcePolicy(
+		ctx,
+		"UPDATE_PRESCRIPTION",
+	)
+	if err != nil {
+		return err
+	}
 	prescription, err := s.GetPrescription(
 		ctx,
 		prescriptionID,
