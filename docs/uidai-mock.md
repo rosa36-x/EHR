@@ -170,7 +170,10 @@ MATCH / NO MATCH
 
 ```json
 {
-  "status": "SUCCESS"
+  "status": "SUCCESS",
+  "fullName": "Rahul Sharma",
+  "aadhaarVID": "VID-AB82CD91EF73",
+  "aadhaarToken": "TOK-7A2B9F4D8E3C"
 }
 ```
 
@@ -193,12 +196,14 @@ Example:
 [
   {
     "aadhaarNumber": "123412341234",
+    "fullName": "Rahul Sharma",
     "dob": "2005-01-01",
     "phone": "9876543210",
     "fingerprintTemplate": "FP_TEMPLATE_001"
   },
   {
     "aadhaarNumber": "567856785678",
+    "fullName": "Priya Nair",
     "dob": "2004-06-15",
     "phone": "9123456780",
     "fingerprintTemplate": "FP_TEMPLATE_002"
@@ -224,10 +229,13 @@ Example:
 {
   "TXN001": {
     "otp": "482913",
+    "aadhaarNumber": "123412341234",
     "expiresAt": "2026-06-16T12:00:00Z"
   }
 }
 ```
+
+OTP records automatically expire after 5 minutes.
 
 OTP records are deleted after:
 
@@ -237,7 +245,6 @@ OTP records are deleted after:
 OTPs are never stored on Fabric, IPFS, or patient records.
 
 ---
-
 ## VID Generation Strategy
 
 After successful OTP verification, a Virtual ID (VID) is generated.
@@ -276,6 +283,19 @@ Purpose:
 
 ## API Specification
 
+### GET /health
+
+Health check endpoint used to verify that the UIDAI mock service is running.
+
+#### Response
+
+```json
+{
+  "status": "UIDAI Mock Service Active"
+}
+```
+
+---
 ### POST /authenticate
 
 Performs demographic verification and generates an OTP.
@@ -342,6 +362,7 @@ Performs Aadhaar-linked biometric authentication for emergency patient identific
 ```json
 {
   "status": "SUCCESS",
+  "fullName": "Rahul Sharma",
   "aadhaarVID": "VID-AB82CD91EF73",
   "aadhaarToken": "TOK-7A2B9F4D8E3C"
 }
@@ -380,6 +401,7 @@ Fingerprint Templates
 
 * OTPs are temporary and short-lived.
 * OTPs are maintained only in server memory.
+* OTPs automatically expire after 5 minutes.
 * Aadhaar numbers remain within the UIDAI mock service.
 * Fingerprint templates remain within the UIDAI mock service.
 * Blockchain records store only VID and tokenized identifiers.

@@ -1,0 +1,23 @@
+[
+  {
+    "aadhaarNumber": "123412341234",
+    "fullName": "Alice Johnson",
+    "dob": "2005-01-01",
+    "phone": "9876543210",
+    "fingerprintTemplate": "FP_TEMPLATE_001"
+  },
+  {
+    "aadhaarNumber": "567856785678",
+    "fullName": "Rahul Sharma",
+    "dob": "2004-06-15",
+    "phone": "9123456780",
+    "fingerprintTemplate": "FP_TEMPLATE_002"
+  },
+  {
+    "aadhaarNumber": "901290129012",
+    "fullName": "Priya Nair",
+    "dob": "2003-09-21",
+    "phone": "9988776655",
+    "fingerprintTemplate": "FP_TEMPLATE_003"
+  }
+]
