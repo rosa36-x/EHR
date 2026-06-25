@@ -1,5 +1,5 @@
-const aadhaarDB = require("../data/aadhaar_db.json");
-const otpStore = require("../temp/otpStore");
+import aadhaarDB from "../data/aadhaar_db.json" assert { type: "json" };
+import otpStore from "../temp/otpStore.js";
 
 function generateOTP() {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -27,20 +27,19 @@ function authenticate(aadhaarNumber, dob) {
     const otp = generateOTP();
 
     otpStore[transactionID] = {
-    otp,
-    aadhaarNumber,
-    expiresAt: Date.now() + (5*60* 1000) // 5 minutes
+        otp,
+        aadhaarNumber,
+        expiresAt: Date.now() + (5 * 60 * 1000)
     };
 
-    console.log(
-        `OTP for ${aadhaarNumber}: ${otp}`
-    );
+    console.log(`OTP for ${aadhaarNumber}: ${otp}`);
 
     return {
         status: "OTP_SENT",
         transactionID
     };
 }
+
 function generateVID() {
     return "VID-" + Math.random().toString(36).substring(2, 14).toUpperCase();
 }
@@ -51,6 +50,7 @@ function generateToken() {
 
 function verifyOTP(transactionID, otp) {
     const record = otpStore[transactionID];
+
     if (!record) {
         return {
             status: "FAILED",
@@ -60,7 +60,6 @@ function verifyOTP(transactionID, otp) {
 
     if (Date.now() > record.expiresAt) {
         delete otpStore[transactionID];
-
         return {
             status: "FAILED",
             message: "OTP expired"
@@ -85,6 +84,7 @@ function verifyOTP(transactionID, otp) {
         aadhaarToken
     };
 }
+
 function authenticateBiometric(fingerprintTemplate) {
     const record = aadhaarDB.find(
         user => user.fingerprintTemplate === fingerprintTemplate
@@ -108,7 +108,7 @@ function authenticateBiometric(fingerprintTemplate) {
     };
 }
 
-module.exports = {
+export {
     authenticate,
     verifyOTP,
     authenticateBiometric

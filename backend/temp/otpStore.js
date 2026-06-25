@@ -1,3 +1,3 @@
 const otpStore = {};
 
-module.exports = otpStore;
+export default otpStore;

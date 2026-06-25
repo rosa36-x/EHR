@@ -23,3 +23,7 @@ node_modules/
 # Go build output
 chaincode/chaincode
 
+#sample tests
+backend/test-ipfs.js
+backend/test.pdf
+
