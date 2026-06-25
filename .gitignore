@@ -26,4 +26,5 @@ chaincode/chaincode
 #sample tests
 backend/test-ipfs.js
 backend/test.pdf
+backend/downloaded.pdf
 

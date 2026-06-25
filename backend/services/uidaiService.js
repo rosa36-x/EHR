@@ -1,4 +1,4 @@
-import aadhaarDB from "../data/aadhaar_db.json" assert { type: "json" };
+import aadhaarDB from "../data/aadhaar_db.json" with { type: "json" };
 import otpStore from "../temp/otpStore.js";
 
 function generateOTP() {

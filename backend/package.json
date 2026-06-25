@@ -12,10 +12,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
     "@helia/unixfs": "^7.2.1",
+    "@hyperledger/fabric-gateway": "^1.11.0",
     "@ipld/dag-pb": "^4.1.7",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "helia": "^6.1.4"
+    "helia": "^6.1.4",
+    "multer": "^2.2.0"
   }
 }
