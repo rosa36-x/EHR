@@ -120,5 +120,9 @@ router.post("/complete-registration", async (req, res) => {
     });
 
 });
+router.get("/:id", async (req, res) => {
+    const result = await patientFabricService.getPatient(req.params.id);
+    res.json(result);
+});
 
 export default router;

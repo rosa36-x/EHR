@@ -1,57 +1,83 @@
-/**
- * Patient Fabric Service
- *
- * NOTE:
- * This is currently a mock implementation.
- *
- * Once gateway.js is completed,
- * replace the TODO section with:
- *
- * const contract = await getContract();
- * await contract.submitTransaction("CreatePatient", ...);
- */
+import { getContract } from "./fabricService.js";
 
 export async function createPatient(patientData) {
+    let gateway;
 
-    console.log("\n==========================================");
-    console.log(" FABRIC CREATE PATIENT (MOCK)");
-    console.log("==========================================\n");
+    try {
+        console.log("\n==========================================");
+        console.log(" FABRIC CREATE PATIENT (REAL)");
+        console.log("==========================================\n");
 
-    console.table(patientData);
+        const { contract, gateway: gw, client } = await getContract();
+        gateway = gw;
+        console.log("AADHAAR VID:", patientData.aadhaarVID);
+        console.log("AADHAAR TOKEN:", patientData.aadhaarToken);
+        await contract.submitTransaction(
+            "CreatePatient",
+            patientData.patientID,
+            patientData.fullName,
+            patientData.dob,
+            patientData.gender,
+            patientData.aadhaarVID,
+            patientData.aadhaarToken,
+            patientData.phone,
+            patientData.email,
+            patientData.createdAt,
+            patientData.updatedAt
+        );
 
-    // -------------------------------------------------
-    // TODO:
-    //
-    // const contract = await getContract();
-    //
-    // await contract.submitTransaction(
-    //     "CreatePatient",
-    //     patientData.patientID,
-    //     patientData.fullName,
-    //     patientData.dob,
-    //     patientData.gender,
-    //     patientData.aadhaarVID,
-    //     patientData.aadhaarToken,
-    //     patientData.phone,
-    //     patientData.email,
-    //     patientData.createdAt,
-    //     patientData.updatedAt
-    // );
-    //
-    // -------------------------------------------------
+        await gateway.close();
+        await client.close();
 
-    return {
+        return {
+            status: "SUCCESS",
+            patientID: patientData.patientID,
+            aadhaarVID: patientData.aadhaarVID,
+            aadhaarToken: patientData.aadhaarToken,
+            message: "Patient successfully written to Fabric ledger"
+        };
 
-        status: "SUCCESS",
+    } catch (err) {
+        if (gateway) await gateway.close();
 
-        patientID: patientData.patientID,
+        console.error("Fabric submitTransaction failed:", err);
 
-        aadhaarVID: patientData.aadhaarVID,
+        return {
+            status: "FAILED",
+            message: err.message
+        };
+    }
+}
 
-        aadhaarToken: patientData.aadhaarToken,
+export async function getPatient(patientID) {
+    let gateway;
 
-        message: "Patient successfully prepared for Fabric submission."
+    try {
+        const { contract, gateway: gw, client } = await getContract();
+        gateway = gw;
 
-    };
+        const result = await contract.evaluateTransaction(
+            "GetPatient",
+            patientID
+        );
 
+        const text = Buffer.from(result).toString("utf8");
+        const data = JSON.parse(text);
+
+        await gateway.close();
+        await client.close();
+
+        return {
+            status: "SUCCESS",
+            data
+        };
+
+    } catch (err) {
+        if (gateway) await gateway.close();
+
+        return {
+            status: "FAILED",
+            message: err.message
+        };
+    }
 }

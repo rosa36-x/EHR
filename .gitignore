@@ -27,4 +27,5 @@ chaincode/chaincode
 backend/test-ipfs.js
 backend/test.pdf
 backend/downloaded.pdf
+backend/report.txt
 
