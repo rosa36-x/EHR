@@ -33,7 +33,7 @@ func (s *SmartContract) CreatePrescription(
 	exists, err := assetExistsInCollection(
 		ctx,
 		PrescriptionCollection,
-		prescriptionID,
+		"PRE_" + prescriptionID,
 	)
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func (s *SmartContract) CreatePrescription(
 
 	return ctx.GetStub().PutPrivateData(
 		PrescriptionCollection,
-		prescriptionID,
+		"PRE_" + prescriptionID,
 		prescriptionJSON,
 	)
 }
@@ -85,7 +85,7 @@ func (s *SmartContract) GetPrescription(
 
 	prescriptionJSON, err := ctx.GetStub().GetPrivateData(
 		PrescriptionCollection,
-		prescriptionID,
+		"PRE_" + prescriptionID,
 	)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (s *SmartContract) UpdatePrescriptionStatus(
 
 	return ctx.GetStub().PutPrivateData(
 		PrescriptionCollection,
-		prescriptionID,
+		"PRE_" + prescriptionID,
 		prescriptionJSON,
 	)
 }

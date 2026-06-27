@@ -26,7 +26,7 @@ func (s *SmartContract) CreateAuditLog(
 	if err != nil {
 		return err
 	}
-	exists, err := ctx.GetStub().GetState(auditID)
+	exists, err := ctx.GetStub().GetState("AUD_" + auditID)
 	if err != nil {
 		return err
 	}
@@ -50,7 +50,7 @@ func (s *SmartContract) CreateAuditLog(
 		return err
 	}
 
-	return ctx.GetStub().PutState(auditID, auditJSON)
+	return ctx.GetStub().PutState("AUD_" + auditID, auditJSON)
 }
 func (s *SmartContract) GetAuditLog(
 	ctx contractapi.TransactionContextInterface,
@@ -64,7 +64,7 @@ func (s *SmartContract) GetAuditLog(
 	if err != nil {
 		return nil, err
 	}
-	auditJSON, err := ctx.GetStub().GetState(auditID)
+	auditJSON, err := ctx.GetStub().GetState("AUD_" + auditID)
 	if err != nil {
 		return nil, err
 	}

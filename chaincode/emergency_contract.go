@@ -25,7 +25,7 @@ func (s *SmartContract) CreateEmergencyAccess(
 	if err != nil {
 		return err
 	}
-	exists, err := ctx.GetStub().GetState(emergencyAccessID)
+	exists, err := ctx.GetStub().GetState("EA_" + emergencyAccessID)
 	if err != nil {
 		return err
 	}
@@ -48,7 +48,7 @@ func (s *SmartContract) CreateEmergencyAccess(
 		return err
 	}
 
-	return ctx.GetStub().PutState(emergencyAccessID, emergencyJSON)
+	return ctx.GetStub().PutState("EA_" + emergencyAccessID, emergencyJSON)
 }
 func (s *SmartContract) GetEmergencyAccess(
 	ctx contractapi.TransactionContextInterface,
@@ -62,7 +62,7 @@ func (s *SmartContract) GetEmergencyAccess(
 	if err != nil {
 		return nil, err
 	}
-	emergencyJSON, err := ctx.GetStub().GetState(emergencyAccessID)
+	emergencyJSON, err := ctx.GetStub().GetState("EA_" + emergencyAccessID)
 	if err != nil {
 		return nil, err
 	}

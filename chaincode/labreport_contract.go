@@ -32,7 +32,7 @@ func (s *SmartContract) CreateLabReport(
 	exists, err := assetExistsInCollection(
 		ctx,
 		LabReportCollection,
-		reportID,
+		"LAB_" +reportID,
 	)
 	if err != nil {
 		return err
@@ -65,7 +65,7 @@ func (s *SmartContract) CreateLabReport(
 
 	return ctx.GetStub().PutPrivateData(
 		LabReportCollection,
-		reportID,
+		"LAB_" + reportID,
 		reportJSON,
 	)
 }
@@ -83,7 +83,7 @@ func (s *SmartContract) GetLabReport(
 
 	reportJSON, err := ctx.GetStub().GetPrivateData(
 		LabReportCollection,
-		reportID,
+		"LAB_" + reportID,
 	)
 	if err != nil {
 		return nil, err
@@ -148,7 +148,7 @@ func (s *SmartContract) UpdateLabReport(
 
 	return ctx.GetStub().PutPrivateData(
 		LabReportCollection,
-		reportID,
+		"LAB_" + reportID,
 		reportJSON,
 	)
 }

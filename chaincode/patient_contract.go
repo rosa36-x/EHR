@@ -43,7 +43,7 @@ func (s *SmartContract) CreatePatient(
 	}
 
 	
-	exists, err := assetExistsInCollection(ctx,PatientCollection,patientID,
+	exists, err := assetExistsInCollection(ctx,PatientCollection,"PAT_" + patientID,
 	)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func (s *SmartContract) CreatePatient(
 
 	err = ctx.GetStub().PutPrivateData(
 		PatientCollection,
-		patientID,
+		"PAT_" + patientID,
 		patientJSON,
 	)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *SmartContract) GetPatient(
 	}
 	patientJSON, err := ctx.GetStub().GetPrivateData(
 		PatientCollection,
-		patientID,
+		"PAT_" + patientID,
 	)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (s *SmartContract) UpdatePatient(
 
 	return ctx.GetStub().PutPrivateData(
 		PatientCollection,
-		patientID,
+		"PAT_" + patientID,
 		patientJSON,
 	)
 }

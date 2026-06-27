@@ -29,7 +29,7 @@ func (s *SmartContract) CreateReferral(
 	if err != nil {
 		return err
 	}
-	exists, err := ctx.GetStub().GetState(referralID)
+	exists, err := ctx.GetStub().GetState("REF_" + referralID)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func (s *SmartContract) CreateReferral(
 		return err
 	}
 
-	return ctx.GetStub().PutState(referralID, referralJSON)
+	return ctx.GetStub().PutState("REF_" + referralID, referralJSON)
 }
 
 func (s *SmartContract) GetReferral(
@@ -71,7 +71,7 @@ func (s *SmartContract) GetReferral(
 	if err != nil {
 		return nil, err
 	}
-	referralJSON, err := ctx.GetStub().GetState(referralID)
+	referralJSON, err := ctx.GetStub().GetState("REF_" + referralID)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ func (s *SmartContract) GrantConsent(
 	exists, err := assetExistsInCollection(
 		ctx,
 		ConsentCollection,
-		consentID,
+		"CON_" + consentID,
 	)
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (s *SmartContract) GrantConsent(
 
 	return ctx.GetStub().PutPrivateData(
 		ConsentCollection,
-		consentID,
+		"CON_" + consentID,
 		consentJSON,
 	)
 }
@@ -79,7 +79,7 @@ func (s *SmartContract) GetConsent(
 
 	consentJSON, err := ctx.GetStub().GetPrivateData(
 		ConsentCollection,
-		consentID,
+		"CON_" + consentID,
 	)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (s *SmartContract) RevokeConsent(
 
 	return ctx.GetStub().PutPrivateData(
 		ConsentCollection,
-		consentID,
+		"CON_" + consentID,
 		consentJSON,
 	)
 }
