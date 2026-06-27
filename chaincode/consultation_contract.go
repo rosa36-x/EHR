@@ -8,6 +8,14 @@ import (
 	"github.com/rosa36-x/EHR/chaincode/models"
 	"github.com/rosa36-x/EHR/chaincode/policy"
 )
+
+// consultationKey namespaces consultation IDs inside PatientRecordCollection
+// to prevent key collisions with patient records (PAT prefix).
+// Consultations use prefix CONS_ e.g. CONS_CONS0001
+func consultationKey(consultationID string) string {
+	return "CONS_" + consultationID
+}
+
 func (s *SmartContract) CreateConsultation(
 	ctx contractapi.TransactionContextInterface,
 	consultationID string,
@@ -29,10 +37,13 @@ func (s *SmartContract) CreateConsultation(
 	if err != nil {
 		return err
 	}
+
+	key := consultationKey(consultationID)
+
 	exists, err := assetExistsInCollection(
 		ctx,
 		PatientCollection,
-		consultationID,
+		key,
 	)
 	if err != nil {
 		return err
@@ -62,10 +73,11 @@ func (s *SmartContract) CreateConsultation(
 
 	return ctx.GetStub().PutPrivateData(
 		PatientCollection,
-		consultationID,
+		key,
 		consultationJSON,
 	)
 }
+
 func (s *SmartContract) GetConsultation(
 	ctx contractapi.TransactionContextInterface,
 	consultationID string,
@@ -78,9 +90,11 @@ func (s *SmartContract) GetConsultation(
 		return nil, err
 	}
 
+	key := consultationKey(consultationID)
+
 	consultationJSON, err := ctx.GetStub().GetPrivateData(
 		PatientCollection,
-		consultationID,
+		key,
 	)
 	if err != nil {
 		return nil, err
@@ -105,6 +119,7 @@ func (s *SmartContract) GetConsultation(
 
 	return &consultation, nil
 }
+
 func (s *SmartContract) UpdateConsultation(
 	ctx contractapi.TransactionContextInterface,
 	consultationID string,
@@ -141,9 +156,12 @@ func (s *SmartContract) UpdateConsultation(
 		return err
 	}
 
+	// Write back using the same prefixed key
+	key := consultationKey(consultationID)
+
 	return ctx.GetStub().PutPrivateData(
 		PatientCollection,
-		consultationID,
+		key,
 		consultationJSON,
 	)
 }
