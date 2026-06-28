@@ -24,6 +24,7 @@ volumes:
   peer0.governance.medvault.com:
   peer0.pharmacy.medvault.com:
   peer0.research.medvault.com:
+  mongo_data:
 
 services:
 
@@ -366,6 +367,14 @@ services:
     command: peer node start
     ports:
       - 11051:11051
+    networks:
+      - medvault
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
     networks:
       - medvault
 
