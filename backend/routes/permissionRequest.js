@@ -1,6 +1,6 @@
 import express from "express";
 import * as svc from "../services/permissionRequestFabricService.js";
-import { authenticate, authorizeRoles } from "../middleware/authMiddleware.js";
+import { authenticate, authorizeRoles } from "../services/authMiddleware.js";
 
 const router = express.Router();
 

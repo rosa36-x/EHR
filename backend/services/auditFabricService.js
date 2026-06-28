@@ -1,13 +1,11 @@
 import { getContract } from "./fabricService.js";
+import { generateID } from "./idService.js";
 
-/**
- * Create an audit log entry on the public ledger.
- * AuditID format: AUD0001, AUD0002, ...
- */
 export async function createAuditLog(data) {
     let gateway, client;
     try {
-        // Governance org submits audit logs per policy registry
+        const auditID = generateID("audit");
+
         const result = await getContract("governance");
         gateway = result.gateway;
         client  = result.client;
@@ -17,7 +15,7 @@ export async function createAuditLog(data) {
 
         await contract.submitTransaction(
             "CreateAuditLog",
-            data.auditID,
+            auditID,
             data.actorID,
             data.actorRole,
             data.action,
@@ -26,7 +24,7 @@ export async function createAuditLog(data) {
             timestamp
         );
 
-        return { status: "SUCCESS", auditID: data.auditID };
+        return { status: "SUCCESS", auditID };
     } catch (err) {
         console.error("[Audit] createAuditLog failed:", err);
         return { status: "FAILED", message: err.message };
@@ -36,10 +34,6 @@ export async function createAuditLog(data) {
     }
 }
 
-/**
- * Get an audit log entry from the public ledger.
- * Only GovernanceMSP is authorized per policy registry.
- */
 export async function getAuditLog(auditID) {
     let gateway, client;
     try {

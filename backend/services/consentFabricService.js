@@ -1,9 +1,9 @@
 import { getContract } from "./fabricService.js";
+import { logAudit } from "./auditMiddleware.js";
+import { notify, NotificationEvents } from "./notificationService.js";
+import { PatientAuth } from "./db.js";
 
-/**
- * Grant consent for a patient resource.
- */
-export async function grantConsent(data) {
+export async function grantConsent(data, actorID) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -26,9 +26,28 @@ export async function grantConsent(data) {
             timestamp
         );
 
+        await logAudit({
+            actorID:      actorID ?? data.patientID,
+            actorRole:    "patient",
+            action:       "CREATE",
+            resourceType: "CONSENT",
+            resourceID:   data.consentID,
+        });
+
+        const patient = await PatientAuth.findOne({ patientID: data.patientID });
+        if (patient) {
+            await notify({
+                recipientID:   data.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "CONSENT_GRANTED",
+                message:       NotificationEvents.CONSENT_GRANTED(data.granteeOrg, data.resourceType),
+                channel:       "sms",
+            });
+        }
+
         return { status: "SUCCESS", consentID: data.consentID };
     } catch (err) {
-        console.error("[Consent] grantConsent failed:", err);
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -36,10 +55,7 @@ export async function grantConsent(data) {
     }
 }
 
-/**
- * Get consent record from Fabric.
- */
-export async function getConsent(consentID) {
+export async function getConsent(consentID, actorID, actorRole) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -50,6 +66,8 @@ export async function getConsent(consentID) {
         const raw  = await contract.evaluateTransaction("GetConsent", consentID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSENT", resourceID: consentID });
+
         return { status: "SUCCESS", data };
     } catch (err) {
         return { status: "FAILED", message: err.message };
@@ -59,11 +77,7 @@ export async function getConsent(consentID) {
     }
 }
 
-/**
- * Check whether a consent record is ACTIVE.
- * Returns boolean active field.
- */
-export async function checkConsent(consentID) {
+export async function checkConsent(consentID, actorID, actorRole) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -74,6 +88,8 @@ export async function checkConsent(consentID) {
         const raw    = await contract.evaluateTransaction("CheckConsent", consentID);
         const active = Buffer.from(raw).toString("utf8") === "true";
 
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSENT", resourceID: consentID });
+
         return { status: "SUCCESS", active };
     } catch (err) {
         return { status: "FAILED", message: err.message };
@@ -83,10 +99,7 @@ export async function checkConsent(consentID) {
     }
 }
 
-/**
- * Revoke an existing consent record.
- */
-export async function revokeConsent(consentID) {
+export async function revokeConsent(consentID, actorID) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -96,7 +109,25 @@ export async function revokeConsent(consentID) {
 
         const updatedAt = new Date().toISOString();
 
+        // Get consent data before revoking for notification
+        const raw      = await contract.evaluateTransaction("GetConsent", consentID);
+        const consentData = JSON.parse(Buffer.from(raw).toString("utf8"));
+
         await contract.submitTransaction("RevokeConsent", consentID, updatedAt);
+
+        await logAudit({ actorID, actorRole: "patient", action: "UPDATE", resourceType: "CONSENT", resourceID: consentID });
+
+        const patient = await PatientAuth.findOne({ patientID: consentData.patientID });
+        if (patient) {
+            await notify({
+                recipientID:   consentData.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "CONSENT_REVOKED",
+                message:       NotificationEvents.CONSENT_REVOKED(consentData.granteeOrg, consentData.resourceType),
+                channel:       "sms",
+            });
+        }
 
         return { status: "SUCCESS", consentID };
     } catch (err) {

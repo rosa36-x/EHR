@@ -1,12 +1,14 @@
 import { getContract } from "./fabricService.js";
+import { logAudit } from "./auditMiddleware.js";
+import { notify, NotificationEvents } from "./notificationService.js";
+import { PatientAuth, Doctor } from "./db.js";
+import { generateID } from "./idService.js";
 
-/**
- * Create an emergency access record on the public ledger.
- * EmergencyAccessID format: EA0001, EA0002, ...
- */
-export async function createEmergencyAccess(data) {
+export async function createEmergencyAccess(data, actorID) {
     let gateway, client;
     try {
+        const emergencyAccessID = generateID("emergency");
+
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
@@ -16,7 +18,7 @@ export async function createEmergencyAccess(data) {
 
         await contract.submitTransaction(
             "CreateEmergencyAccess",
-            data.emergencyAccessID,
+            emergencyAccessID,
             data.patientID,
             data.doctorID,
             data.reason,
@@ -24,9 +26,30 @@ export async function createEmergencyAccess(data) {
             timestamp
         );
 
-        return { status: "SUCCESS", emergencyAccessID: data.emergencyAccessID };
+        await logAudit({
+            actorID:      actorID ?? data.doctorID,
+            actorRole:    "doctor",
+            action:       "CREATE",
+            resourceType: "EMERGENCY_ACCESS",
+            resourceID:   data.patientID,
+        });
+
+        // Notify patient of emergency access
+        const patient = await PatientAuth.findOne({ patientID: data.patientID });
+        const doctor  = await Doctor.findOne({ doctorID: data.doctorID });
+        if (patient && doctor) {
+            await notify({
+                recipientID:   data.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "EMERGENCY_ACCESS",
+                message:       NotificationEvents.EMERGENCY_ACCESS(doctor.fullName, data.reason),
+                channel:       "sms",
+            });
+        }
+
+        return { status: "SUCCESS", emergencyAccessID };
     } catch (err) {
-        console.error("[Emergency] createEmergencyAccess failed:", err);
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -34,10 +57,7 @@ export async function createEmergencyAccess(data) {
     }
 }
 
-/**
- * Get an emergency access record from the public ledger.
- */
-export async function getEmergencyAccess(emergencyAccessID) {
+export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -47,6 +67,8 @@ export async function getEmergencyAccess(emergencyAccessID) {
 
         const raw  = await contract.evaluateTransaction("GetEmergencyAccess", emergencyAccessID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
 
         return { status: "SUCCESS", data };
     } catch (err) {

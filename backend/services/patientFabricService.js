@@ -1,20 +1,23 @@
 import { getContract } from "./fabricService.js";
+import { logAudit } from "./auditMiddleware.js";
+import { registerPatientAuth } from "./authService.js";
+import { generateID } from "./idService.js";
 
 export async function createPatient(patientData) {
-    let gateway;
-
+    let gateway, client;
     try {
-        console.log("\n==========================================");
-        console.log(" FABRIC CREATE PATIENT (REAL)");
-        console.log("==========================================\n");
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
 
-        const { contract, gateway: gw, client } = await getContract();
-        gateway = gw;
-        console.log("AADHAAR VID:", patientData.aadhaarVID);
-        console.log("AADHAAR TOKEN:", patientData.aadhaarToken);
+        // Generate patientID server-side
+        const patientID = generateID("patient");
+        const timestamp = new Date().toISOString();
+
         await contract.submitTransaction(
             "CreatePatient",
-            patientData.patientID,
+            patientID,
             patientData.fullName,
             patientData.dob,
             patientData.gender,
@@ -22,62 +25,61 @@ export async function createPatient(patientData) {
             patientData.aadhaarToken,
             patientData.phone,
             patientData.email,
-            patientData.createdAt,
-            patientData.updatedAt
+            timestamp,
+            timestamp
         );
 
-        await gateway.close();
-        await client.close();
+        // Register patient auth record in MongoDB for login
+        await registerPatientAuth(patientID, patientData.phone);
+
+        await logAudit({
+            actorID:      "SYSTEM",
+            actorRole:    "system",
+            action:       "CREATE",
+            resourceType: "PATIENT",
+            resourceID:   patientID,
+        });
 
         return {
-            status: "SUCCESS",
-            patientID: patientData.patientID,
-            aadhaarVID: patientData.aadhaarVID,
+            status:       "SUCCESS",
+            patientID,
+            aadhaarVID:   patientData.aadhaarVID,
             aadhaarToken: patientData.aadhaarToken,
-            message: "Patient successfully written to Fabric ledger"
+            message:      "Patient successfully written to Fabric ledger",
         };
-
     } catch (err) {
-        if (gateway) await gateway.close();
-
         console.error("Fabric submitTransaction failed:", err);
-
-        return {
-            status: "FAILED",
-            message: err.message
-        };
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
     }
 }
 
-export async function getPatient(patientID) {
-    let gateway;
-
+export async function getPatient(patientID, actorID, actorRole) {
+    let gateway, client;
     try {
-        const { contract, gateway: gw, client } = await getContract();
-        gateway = gw;
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
 
-        const result = await contract.evaluateTransaction(
-            "GetPatient",
-            patientID
-        );
+        const raw  = await contract.evaluateTransaction("GetPatient", patientID);
+        const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
-        const text = Buffer.from(result).toString("utf8");
-        const data = JSON.parse(text);
+        await logAudit({
+            actorID:      actorID ?? "SYSTEM",
+            actorRole:    actorRole ?? "system",
+            action:       "READ",
+            resourceType: "PATIENT",
+            resourceID:   patientID,
+        });
 
-        await gateway.close();
-        await client.close();
-
-        return {
-            status: "SUCCESS",
-            data
-        };
-
+        return { status: "SUCCESS", data };
     } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
         if (gateway) await gateway.close();
-
-        return {
-            status: "FAILED",
-            message: err.message
-        };
+        if (client)  client.close();
     }
 }

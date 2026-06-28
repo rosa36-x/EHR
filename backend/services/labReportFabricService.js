@@ -2,21 +2,25 @@ import crypto from "crypto";
 import { getContract } from "./fabricService.js";
 import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
+import { logAudit } from "./auditMiddleware.js";
+import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
+import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
+import { hasActivePermission } from "./permissionRequestFabricService.js";
+import { notify, NotificationEvents } from "./notificationService.js";
+import { PatientAuth } from "./db.js";
 
-/**
- * Create a lab report record.
- * Flow: encrypt doc → upload to IPFS → submit to Fabric (LabReportCollection)
- * Submits as LaboratoryMSP.
- */
-export async function createLabReport(data, fileBuffer) {
+export async function createLabReport(data, fileBuffer, actorID) {
     let gateway, client;
     try {
+        if (!isValidRecordType("LAB_REPORT", data.reportType)) {
+            return { status: "FAILED", message: `Invalid reportType: ${data.reportType}` };
+        }
+
+        const sensitivityLevel = getSensitivityLevel(data.reportType);
+
         const { encryptedBuffer, keyRef } = await encryptDocument(fileBuffer);
         const reportCID  = await uploadFile(encryptedBuffer);
-        const reportHash = crypto
-            .createHash("sha256")
-            .update(fileBuffer)
-            .digest("hex");
+        const reportHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
         const result = await getContract("laboratory");
         gateway = result.gateway;
@@ -31,6 +35,7 @@ export async function createLabReport(data, fileBuffer) {
             data.patientID,
             data.labTechID,
             data.reportType,
+            sensitivityLevel,
             reportCID,
             reportHash,
             keyRef,
@@ -39,15 +44,43 @@ export async function createLabReport(data, fileBuffer) {
             timestamp
         );
 
+        await logAudit({
+            actorID:      actorID ?? data.labTechID,
+            actorRole:    "doctor",
+            action:       "CREATE",
+            resourceType: "LAB_REPORT",
+            resourceID:   data.patientID,
+        });
+
+        // Notify patient
+        const patient = await PatientAuth.findOne({ patientID: data.patientID });
+        if (patient) {
+            await notify({
+                recipientID:   data.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "LAB_REPORT_UPLOADED",
+                message:       NotificationEvents.LAB_REPORT_UPLOADED(data.reportType),
+                channel:       "sms",
+            });
+        }
+
         return {
             status:           "SUCCESS",
             reportID:         data.reportID,
             reportCID,
             reportHash,
+            sensitivityLevel,
             encryptionKeyRef: keyRef,
         };
     } catch (err) {
-        console.error("[LabReport] createLabReport failed:", err);
+        await logAudit({
+            actorID:      actorID ?? data.labTechID,
+            actorRole:    "doctor",
+            action:       "ACCESS_FAILED",
+            resourceType: "LAB_REPORT",
+            resourceID:   data.patientID,
+        });
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -55,11 +88,7 @@ export async function createLabReport(data, fileBuffer) {
     }
 }
 
-/**
- * Get lab report metadata from Fabric.
- * @param {string} orgName - "hospital" or "laboratory"
- */
-export async function getLabReport(reportID, orgName = "laboratory") {
+export async function getLabReport(reportID, actorID, actorRole, orgName = "laboratory") {
     let gateway, client;
     try {
         const result = await getContract(orgName);
@@ -70,6 +99,22 @@ export async function getLabReport(reportID, orgName = "laboratory") {
         const raw  = await contract.evaluateTransaction("GetLabReport", reportID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
+        if (data.sensitivityLevel === "SENSITIVE") {
+            const hasPermission = await hasActivePermission(actorID, reportID);
+            if (!hasPermission) {
+                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
+                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: reportID, resourceType: "LAB_REPORT" };
+            }
+        } else {
+            const hasRelationship = await hasActiveTreatmentRelationship(actorID, data.patientID);
+            if (!hasRelationship) {
+                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
+                return { status: "ACCESS_DENIED", message: "No active treatment relationship with this patient." };
+            }
+        }
+
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID });
+
         return { status: "SUCCESS", data };
     } catch (err) {
         return { status: "FAILED", message: err.message };
@@ -79,11 +124,7 @@ export async function getLabReport(reportID, orgName = "laboratory") {
     }
 }
 
-/**
- * Retrieve and decrypt a lab report document from IPFS.
- * @param {string} orgName - "hospital" or "laboratory"
- */
-export async function getLabReportDocument(reportID, orgName = "laboratory") {
+export async function getLabReportDocument(reportID, actorID, actorRole, orgName = "laboratory") {
     let gateway, client;
     try {
         const result = await getContract(orgName);
@@ -92,12 +133,28 @@ export async function getLabReportDocument(reportID, orgName = "laboratory") {
         const { contract } = result;
 
         const raw = await contract.evaluateTransaction("GetLabReport", reportID);
-        const { reportCID, encryptionKeyRef } = JSON.parse(
+        const { reportCID, encryptionKeyRef, sensitivityLevel, patientID } = JSON.parse(
             Buffer.from(raw).toString("utf8")
         );
 
+        if (sensitivityLevel === "SENSITIVE") {
+            const hasPermission = await hasActivePermission(actorID, reportID);
+            if (!hasPermission) {
+                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
+                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: reportID, resourceType: "LAB_REPORT" };
+            }
+        } else {
+            const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
+            if (!hasRelationship) {
+                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
+                return { status: "ACCESS_DENIED", message: "No active treatment relationship with this patient." };
+            }
+        }
+
         const encryptedBuffer = await getFile(reportCID);
         const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID });
 
         return { status: "SUCCESS", document: plaintext };
     } catch (err) {
@@ -108,18 +165,14 @@ export async function getLabReportDocument(reportID, orgName = "laboratory") {
     }
 }
 
-/**
- * Update a lab report (new document version or status change).
- */
-export async function updateLabReport(data, fileBuffer) {
+export async function updateLabReport(data, fileBuffer, actorID) {
     let gateway, client;
     try {
         const { encryptedBuffer, keyRef } = await encryptDocument(fileBuffer);
         const reportCID  = await uploadFile(encryptedBuffer);
-        const reportHash = crypto
-            .createHash("sha256")
-            .update(fileBuffer)
-            .digest("hex");
+        const reportHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
+
+        const sensitivityLevel = getSensitivityLevel(data.reportType);
 
         const result = await getContract("laboratory");
         gateway = result.gateway;
@@ -139,13 +192,9 @@ export async function updateLabReport(data, fileBuffer) {
             updatedAt
         );
 
-        return {
-            status:           "SUCCESS",
-            reportID:         data.reportID,
-            reportCID,
-            reportHash,
-            encryptionKeyRef: keyRef,
-        };
+        await logAudit({ actorID, actorRole: "doctor", action: "UPDATE", resourceType: "LAB_REPORT", resourceID: data.reportID });
+
+        return { status: "SUCCESS", reportID: data.reportID, reportCID, reportHash, sensitivityLevel, encryptionKeyRef: keyRef };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {
@@ -153,3 +202,4 @@ export async function updateLabReport(data, fileBuffer) {
         if (client)  client.close();
     }
 }
+
