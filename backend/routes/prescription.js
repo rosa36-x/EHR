@@ -1,29 +1,30 @@
 import express from "express";
 import multer from "multer";
 import * as svc from "../services/prescriptionFabricService.js";
+import { authenticate } from "../services/authMiddleware.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 /**
  * POST /prescriptions
- * Multipart form: file (PDF) + fields (prescriptionID, patientID, doctorID, issuedAt?)
+ * Multipart form: file (PDF) + fields (prescriptionID, patientID, doctorID, recordType, issuedAt?)
  */
-router.post("/", upload.single("file"), async (req, res) => {
+router.post("/", authenticate, upload.single("file"), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ status: "FAILED", message: "Prescription document (PDF) is required." });
     }
 
-    const { prescriptionID, patientID, doctorID } = req.body;
+    const { prescriptionID, patientID, doctorID, recordType } = req.body;
 
-    if (!prescriptionID || !patientID || !doctorID) {
+    if (!prescriptionID || !patientID || !doctorID || !recordType) {
         return res.status(400).json({
             status: "FAILED",
-            message: "prescriptionID, patientID, doctorID are required.",
+            message: "prescriptionID, patientID, doctorID, recordType are required.",
         });
     }
 
-    const result = await svc.createPrescription(req.body, req.file.buffer);
+    const result = await svc.createPrescription(req.body, req.file.buffer, req.user.id);
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
 
@@ -31,23 +32,22 @@ router.post("/", upload.single("file"), async (req, res) => {
  * GET /prescriptions/:id
  * Query param: ?org=hospital|pharmacy (default: hospital)
  */
-router.get("/:id", async (req, res) => {
+router.get("/:id", authenticate, async (req, res) => {
     const org = req.query.org ?? "hospital";
-    const result = await svc.getPrescription(req.params.id, org);
+    const result = await svc.getPrescription(req.params.id, req.user.id, req.user.role, org);
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
 
 /**
  * GET /prescriptions/:id/document
- * Returns decrypted prescription PDF from IPFS.
  * Query param: ?org=hospital|pharmacy (default: hospital)
  */
-router.get("/:id/document", async (req, res) => {
+router.get("/:id/document", authenticate, async (req, res) => {
     const org = req.query.org ?? "hospital";
-    const result = await svc.getPrescriptionDocument(req.params.id, org);
+    const result = await svc.getPrescriptionDocument(req.params.id, req.user.id, req.user.role, org);
 
     if (result.status !== "SUCCESS") {
-        return res.status(500).json(result);
+        return res.status(result.status === "ACCESS_DENIED" ? 403 : 500).json(result);
     }
 
     res.setHeader("Content-Type", "application/pdf");
@@ -59,7 +59,7 @@ router.get("/:id/document", async (req, res) => {
  * PATCH /prescriptions/:id/status
  * Body: { status, dispensedAt?, org? }
  */
-router.patch("/:id/status", async (req, res) => {
+router.patch("/:id/status", authenticate, async (req, res) => {
     const { status, dispensedAt, org } = req.body;
 
     if (!status) {
@@ -70,6 +70,8 @@ router.patch("/:id/status", async (req, res) => {
         req.params.id,
         status,
         dispensedAt,
+        req.user.id,
+        req.user.role,
         org ?? "hospital"
     );
 

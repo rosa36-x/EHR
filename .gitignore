@@ -30,4 +30,5 @@ backend/downloaded.pdf
 backend/report.txt
 
 backend/data/kms_store.json
+fix_medvault_bugs.sh
 

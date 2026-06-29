@@ -90,7 +90,7 @@ export async function checkConsent(consentID, actorID, actorRole) {
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSENT", resourceID: consentID });
 
-        return { status: "SUCCESS", active };
+        return { status: "SUCCESS", isActive: active };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {

@@ -39,7 +39,6 @@ router.post("/complete-registration", async (req, res) => {
     const {
         transactionID,
         otp,
-        patientID,
         fullName,
         dob,
         gender,
@@ -50,7 +49,6 @@ router.post("/complete-registration", async (req, res) => {
     if (
         !transactionID ||
         !otp ||
-        !patientID ||
         !fullName ||
         !dob ||
         !gender ||

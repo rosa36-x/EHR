@@ -1,6 +1,6 @@
 import express from "express";
 import { getContract } from "../services/fabricService.js";
-import { authenticate, authorizeRoles } from "../middleware/authMiddleware.js";
+import { authenticate, authorizeRoles } from "../services/authMiddleware.js";
 
 const router = express.Router();
 
@@ -21,7 +21,7 @@ router.get("/:auditID", authenticate, async (req, res) => {
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
         // Patients can only view audit logs for their own records
-        if (req.user.role === "patient" && data.resourceID !== req.user.id) {
+        if (req.user.role === "patient" && data.actorID !== req.user.id) {
             return res.status(403).json({
                 status:  "FAILED",
                 message: "Access denied. You can only view your own audit history.",
