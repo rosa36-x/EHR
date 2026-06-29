@@ -53,13 +53,7 @@ medvault-tests/
 
 ## Quick Start
 
-### 1 — Apply bug fixes
-```bash
-# Run from repo root (folder that contains backend/)
-bash medvault-tests/fix_medvault_bugs_v2.sh
-```
-
-### 2 — Bruno (functional API testing against live backend)
+### 1 — Bruno (functional API testing against live backend)
 
 **Prerequisites:** Fabric network running, MongoDB running, backend running (`node backend/server.js`)
 
@@ -70,7 +64,7 @@ bash medvault-tests/fix_medvault_bugs_v2.sh
 
 **Folder run order matters** — later folders depend on env vars (`doctor_token`, `patient_id`, etc.) set by earlier ones.
 
-### 3 — Jest (unit + integration tests with mocked Fabric/IPFS/KMS)
+### 2 — Jest (unit + integration tests with mocked Fabric/IPFS/KMS)
 
 **Prerequisites:** MongoDB reachable (defaults to `mongodb://localhost:27017/medvault_test`)
 
