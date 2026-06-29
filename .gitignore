@@ -1,4 +1,8 @@
-# Fabric crypto material (DO NOT COMMIT)
+# =========================
+# Hyperledger Fabric
+# =========================
+
+# Generated crypto material (DO NOT COMMIT)
 organizations/
 crypto-config/
 msp/
@@ -6,33 +10,66 @@ wallet/
 tls/
 
 # Ledger / generated artifacts
+ledger/
 *.block
 *.tx
 *.tar
 *.tar.gz
-ledger/
 
-# Docker runtime files
+# =========================
+# Docker
+# =========================
 docker-compose.override.yml
 
-# Environment files
+# =========================
+# Environment variables
+# =========================
 .env
+.env.*
+!.env.example
 
-# Node modules (if any app exists later)
+# =========================
+# Node.js
+# =========================
 node_modules/
+npm-debug.log*
+coverage/
+
+# =========================
 # Go build output
+# =========================
 chaincode/chaincode
 
-#sample tests
+# =========================
+# Test artifacts
+# =========================
 backend/test-ipfs.js
 backend/test.pdf
 backend/downloaded.pdf
 backend/report.txt
 backend/medvault-tests.zip
 
-
+# =========================
+# Local KMS data
+# =========================
 backend/data/kms_store.json
+
+# =========================
+# Temporary scripts
+# =========================
 fix_medvault_bugs.sh
 fix_medvault_bugs_v2.sh
 
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
+# =========================
+# Bruno local environments
+# =========================
+*.local.bru
+local.bru
