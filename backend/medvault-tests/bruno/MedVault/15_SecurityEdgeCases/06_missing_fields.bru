@@ -1,0 +1,35 @@
+meta {
+  name: Security - Missing Required Fields
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/permission-requests
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "{{patient_id}}"
+  }
+}
+
+// Missing: resourceType, resourceID, reason
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("validation message lists missing fields", function() {
+    expect(res.body.message).to.be.a("string");
+  });
+}

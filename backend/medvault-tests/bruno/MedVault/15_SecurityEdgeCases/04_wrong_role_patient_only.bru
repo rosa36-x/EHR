@@ -1,0 +1,30 @@
+meta {
+  name: Security - Wrong Role (Doctor Token on Patient Route)
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/permission-requests/{{permission_request_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+// /approve is restricted to role "patient" via authorizeRoles().
+// Sending a doctor token should yield 403.
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error mentions required role", function() {
+    expect(res.body.message).to.include("patient");
+  });
+}

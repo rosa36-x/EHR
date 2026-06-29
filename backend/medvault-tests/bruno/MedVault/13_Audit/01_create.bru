@@ -1,0 +1,39 @@
+meta {
+  name: Create Audit Log (Direct)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/audits
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "auditID": "AUD_MANUAL_TEST_001",
+    "actorID": "{{doctor_id}}",
+    "actorRole": "doctor",
+    "action": "READ",
+    "resourceType": "CONSULTATION",
+    "resourceID": "{{consultation_id}}"
+  }
+}
+
+// NOTE: The /audits route generates its OWN auditID via generateID() and
+// ignores the auditID in the body — the body field is therefore vestigial.
+// The returned auditID from the service will have the real AUD prefix.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("auditID returned", function() {
+    expect(res.body.auditID).to.match(/^AUD/);
+    bru.setEnvVar("audit_id", res.body.auditID);
+  });
+}

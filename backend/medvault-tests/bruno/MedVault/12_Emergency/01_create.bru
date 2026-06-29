@@ -1,0 +1,36 @@
+meta {
+  name: Create Emergency Access
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/emergency-access
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "emergencyAccessID": "EA0001",
+    "patientID": "{{patient_id}}",
+    "doctorID": "{{doctor_id}}",
+    "reason": "Patient brought in unconscious, emergency surgery required"
+  }
+}
+
+// NOTE: emergencyAccessID in body is ignored — service auto-generates via generateID("emergency").
+// The body field is vestigial; the route passes it through but the service overrides it.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("emergencyAccessID returned with EA prefix", function() {
+    expect(res.body.emergencyAccessID).to.match(/^EA/);
+    bru.setEnvVar("emergency_access_id", res.body.emergencyAccessID);
+  });
+}

@@ -1,0 +1,46 @@
+meta {
+  name: Patient Registration - Complete
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/patients/complete-registration
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "transactionID": "{{patient_reg_txn_id}}",
+    "otp": "PASTE_OTP_FROM_SERVER_LOG_HERE",
+    "fullName": "Alice Johnson",
+    "dob": "2005-01-01",
+    "gender": "Female",
+    "phone": "{{patient_phone}}",
+    "email": "alice@patient.test"
+  }
+}
+
+// NOTE: Update `otp` from the server console before running.
+// transactionID is set automatically by the previous request.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("patientID returned with PAT prefix", function() {
+    expect(res.body.patient.patientID).to.be.a("string");
+    expect(res.body.patient.patientID).to.match(/^PAT/);
+    bru.setEnvVar("patient_id", res.body.patient.patientID);
+  });
+  test("aadhaarVID returned", function() {
+    expect(res.body.patient.aadhaarVID).to.match(/^VID-/);
+  });
+  test("aadhaarToken returned", function() {
+    expect(res.body.patient.aadhaarToken).to.match(/^TOK-/);
+  });
+}

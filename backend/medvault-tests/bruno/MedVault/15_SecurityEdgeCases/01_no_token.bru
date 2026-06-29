@@ -1,0 +1,23 @@
+meta {
+  name: Security - No Token on Protected Route
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/consultations/{{consultation_id}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 401", function() {
+    expect(res.status).to.equal(401);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error message mentions token", function() {
+    expect(res.body.message).to.include("token").or.include("Token");
+  });
+}

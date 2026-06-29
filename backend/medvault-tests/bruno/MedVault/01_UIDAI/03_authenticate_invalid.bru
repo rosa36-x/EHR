@@ -1,0 +1,31 @@
+meta {
+  name: Authenticate - Invalid Aadhaar
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/uidai/authenticate
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "aadhaarNumber": "000000000000",
+    "dob": "1990-01-01"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    // UIDAI mock returns 200 with FAILED status body (not HTTP 400)
+    expect(res.status).to.equal(200);
+  });
+  test("FAILED status for unknown Aadhaar", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error message present", function() {
+    expect(res.body.message).to.be.a("string");
+  });
+}

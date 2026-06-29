@@ -1,0 +1,42 @@
+meta {
+  name: Create Prescription
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/prescriptions
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  prescriptionID: PRE0001
+  patientID: {{patient_id}}
+  doctorID: {{doctor_id}}
+  recordType: GENERAL
+  file: @file(/path/to/test_prescription.pdf)
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("prescriptionID returned", function() {
+    bru.setEnvVar("prescription_id", res.body.prescriptionID);
+  });
+  test("sensitivityLevel NORMAL", function() {
+    expect(res.body.sensitivityLevel).to.equal("NORMAL");
+  });
+  test("CID and keyRef returned", function() {
+    expect(res.body.prescriptionCID).to.be.a("string");
+    expect(res.body.encryptionKeyRef).to.match(/^KEY/);
+  });
+}

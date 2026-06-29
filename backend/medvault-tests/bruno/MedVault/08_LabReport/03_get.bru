@@ -1,0 +1,27 @@
+meta {
+  name: Get Lab Report
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/labreports/{{lab_report_id}}?org=laboratory
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("reportType is BLOOD_TEST", function() {
+    expect(res.body.data.reportType).to.equal("BLOOD_TEST");
+  });
+}

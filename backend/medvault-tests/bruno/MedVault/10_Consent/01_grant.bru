@@ -1,0 +1,35 @@
+meta {
+  name: Grant Consent
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/consents
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "consentID": "CON0001",
+    "patientID": "{{patient_id}}",
+    "granteeOrg": "PharmacyMSP",
+    "resourceType": "PRESCRIPTION",
+    "permission": "READ",
+    "expiryDate": "2026-12-31T00:00:00.000Z"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("consentID returned", function() {
+    expect(res.body.consentID).to.be.a("string");
+    bru.setEnvVar("consent_id", res.body.consentID);
+  });
+}

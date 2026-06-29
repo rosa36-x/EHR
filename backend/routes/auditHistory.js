@@ -20,12 +20,19 @@ router.get("/:auditID", authenticate, async (req, res) => {
         const raw  = await contract.evaluateTransaction("GetAuditLog", req.params.auditID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
-        // Patients can only view audit logs for their own records
-        if (req.user.role === "patient" && data.actorID !== req.user.id) {
-            return res.status(403).json({
-                status:  "FAILED",
-                message: "Access denied. You can only view your own audit history.",
-            });
+        // Patients can view audit logs where:
+        //   (a) they were the actor (actorID matches their ID), OR
+        //   (b) the audited resource belongs to them (resourceID matches their patientID)
+        // This correctly covers "someone accessed MY record" audit events.
+        if (req.user.role === "patient") {
+            const isOwnAction   = data.actorID    === req.user.id;
+            const isOwnResource = data.resourceID === req.user.id;
+            if (!isOwnAction && !isOwnResource) {
+                return res.status(403).json({
+                    status:  "FAILED",
+                    message: "Access denied. You can only view audit history for your own records.",
+                });
+            }
         }
 
         return res.json({ status: "SUCCESS", data });

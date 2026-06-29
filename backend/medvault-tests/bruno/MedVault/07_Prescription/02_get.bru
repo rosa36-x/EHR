@@ -1,0 +1,24 @@
+meta {
+  name: Get Prescription (Hospital org)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{prescription_id}}?org=hospital
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("prescription status is ISSUED", function() {
+    expect(res.body.data.status).to.equal("ISSUED");
+  });
+}

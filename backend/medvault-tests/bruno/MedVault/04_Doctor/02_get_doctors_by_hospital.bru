@@ -1,0 +1,30 @@
+meta {
+  name: Get Doctors by Hospital
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/doctors/hospital/HOSP001
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("returns array of doctors", function() {
+    expect(res.body.data).to.be.an("array");
+    expect(res.body.data.length).to.be.at.least(1);
+  });
+  test("no passwordHash in any doctor", function() {
+    res.body.data.forEach(function(doc) {
+      expect(doc.passwordHash).to.be.undefined;
+    });
+  });
+}

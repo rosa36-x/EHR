@@ -28,7 +28,11 @@ backend/test-ipfs.js
 backend/test.pdf
 backend/downloaded.pdf
 backend/report.txt
+backend/medvault-tests.zip
+
 
 backend/data/kms_store.json
 fix_medvault_bugs.sh
+fix_medvault_bugs_v2.sh
+
 

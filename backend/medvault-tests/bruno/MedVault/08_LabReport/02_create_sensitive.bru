@@ -1,0 +1,33 @@
+meta {
+  name: Create Lab Report - Sensitive (HIV Test)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/labreports
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  reportID: LAB0002
+  patientID: {{patient_id}}
+  labTechID: LABTECH001
+  reportType: HIV_TEST
+  file: @file(/path/to/test_labreport.pdf)
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("sensitivityLevel SENSITIVE for HIV_TEST", function() {
+    expect(res.body.sensitivityLevel).to.equal("SENSITIVE");
+    bru.setEnvVar("sensitive_lab_report_id", res.body.reportID);
+  });
+}

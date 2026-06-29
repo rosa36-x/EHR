@@ -1,0 +1,20 @@
+meta {
+  name: Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/uidai/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("UIDAI service active", function() {
+    expect(res.body.status).to.equal("UIDAI Mock Service Active");
+  });
+}

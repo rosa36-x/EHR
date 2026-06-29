@@ -1,0 +1,45 @@
+meta {
+  name: Create Permission Request (Doctor)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/permission-requests
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "{{patient_id}}",
+    "resourceType": "CONSULTATION",
+    "resourceID": "{{sensitive_consultation_id}}",
+    "reason": "Patient presented in clinic with related symptoms requiring review of psychiatric history."
+  }
+}
+
+// Prerequisites: sensitive_consultation_id must be set (run 06/02 first).
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("requestID returned with PREQ prefix", function() {
+    expect(res.body.requestID).to.match(/^PREQ/);
+    bru.setEnvVar("permission_request_id", res.body.requestID);
+  });
+  test("expiresAt is ~24 hours from now", function() {
+    var expiresAt = new Date(res.body.expiresAt).getTime();
+    var now       = Date.now();
+    var diffHours = (expiresAt - now) / (1000 * 60 * 60);
+    expect(diffHours).to.be.within(23, 25);
+  });
+}

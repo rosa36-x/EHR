@@ -1,0 +1,32 @@
+meta {
+  name: Security - Expired JWT
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/consultations/{{consultation_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  // This is a pre-signed JWT with exp in the past (nbf and iat 2020-01-01).
+  // Generated with secret "medvault-dev-secret-change-in-prod", role doctor, exp 1577836801 (past).
+  // DO NOT use a real token here — this must be an already-expired one.
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IkRPQzAwMDEiLCJyb2xlIjoiZG9jdG9yIiwiaWF0IjoxNTc3ODM2ODAwLCJleHAiOjE1Nzc4MzY4MDF9.W19KCFy3HkCVEd_cQv4xM2LGOvQkBYmS9BZzVNaBT4k
+}
+
+tests {
+  test("status 401", function() {
+    expect(res.status).to.equal(401);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error mentions expired or invalid", function() {
+    expect(res.body.message).to.satisfy(function(m) {
+      return m.includes("expired") || m.includes("Invalid") || m.includes("invalid");
+    });
+  });
+}

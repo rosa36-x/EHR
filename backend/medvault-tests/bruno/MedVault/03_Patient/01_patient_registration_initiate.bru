@@ -1,0 +1,33 @@
+meta {
+  name: Patient Registration - Initiate (Aadhaar)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/patients/initiate-registration
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "aadhaarNumber": "{{aadhaar_number}}",
+    "dob": "{{aadhaar_dob}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("OTP_SENT status", function() {
+    expect(res.body.status).to.equal("OTP_SENT");
+  });
+  test("transactionID returned", function() {
+    expect(res.body.transactionID).to.be.a("string");
+    bru.setEnvVar("patient_reg_txn_id", res.body.transactionID);
+  });
+}
+
+// NOTE: OTP printed to server console. Copy it for the next step.

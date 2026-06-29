@@ -1,0 +1,30 @@
+meta {
+  name: Get Consultation Document (PDF)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/consultations/{{consultation_id}}/document
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("Content-Type is PDF", function() {
+    expect(res.headers["content-type"]).to.include("application/pdf");
+  });
+  test("Content-Disposition is attachment", function() {
+    expect(res.headers["content-disposition"]).to.include("attachment");
+  });
+  test("response body is non-empty binary", function() {
+    expect(res.body).to.not.be.empty;
+  });
+}

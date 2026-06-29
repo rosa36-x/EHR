@@ -1,0 +1,23 @@
+meta {
+  name: IPFS Download - Invalid CID
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/ipfs/download/notavalidcid12345
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 500", function() {
+    expect(res.status).to.equal(500);
+  });
+  test("success false", function() {
+    expect(res.body.success).to.equal(false);
+  });
+  test("error message mentions CID", function() {
+    expect(res.body.message).to.include("CID").or.include("Invalid");
+  });
+}

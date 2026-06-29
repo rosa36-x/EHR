@@ -1,0 +1,27 @@
+meta {
+  name: Get Emergency Access
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/emergency-access/{{emergency_access_id}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("emergency access fields correct", function() {
+    var d = res.body.data;
+    expect(d.patientID).to.equal(bru.getEnvVar("patient_id"));
+    expect(d.doctorID).to.equal(bru.getEnvVar("doctor_id"));
+    expect(d.status).to.equal("ACTIVE");
+    expect(d.reason).to.be.a("string");
+  });
+}

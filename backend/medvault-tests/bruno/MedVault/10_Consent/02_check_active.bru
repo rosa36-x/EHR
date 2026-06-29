@@ -1,0 +1,20 @@
+meta {
+  name: Check Consent Active
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/consents/{{consent_id}}/check
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("consent is active", function() {
+    expect(res.body.isActive).to.equal(true);
+  });
+}

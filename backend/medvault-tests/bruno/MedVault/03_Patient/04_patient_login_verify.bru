@@ -1,0 +1,35 @@
+meta {
+  name: Patient Login - OTP Verify
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/auth/patient/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "{{patient_phone}}",
+    "otp": "PASTE_OTP_FROM_SERVER_LOG_HERE"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("JWT token returned", function() {
+    expect(res.body.token).to.be.a("string");
+    expect(res.body.token.split(".").length).to.equal(3);
+    bru.setEnvVar("patient_token", res.body.token);
+  });
+  test("patientID matches registered patient", function() {
+    expect(res.body.patientID).to.equal(bru.getEnvVar("patient_id"));
+  });
+}

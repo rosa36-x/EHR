@@ -1,0 +1,32 @@
+meta {
+  name: Update Prescription Status - DISPENSED
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/prescriptions/{{prescription_id}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "status": "DISPENSED",
+    "dispensedAt": "2025-09-01T10:00:00.000Z",
+    "org": "pharmacy"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

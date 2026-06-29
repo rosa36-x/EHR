@@ -1,0 +1,34 @@
+{
+  "name": "medvault-tests",
+  "version": "1.0.0",
+  "description": "MedVault backend test suite — unit + integration",
+  "private": true,
+  "scripts": {
+    "test":            "jest --runInBand --forceExit",
+    "test:unit":       "jest --testPathPattern=src/unit --runInBand --forceExit",
+    "test:integration":"jest --testPathPattern=src/integration --runInBand --forceExit",
+    "test:coverage":   "jest --coverage --runInBand --forceExit"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "setupFilesAfterFramework": [],
+    "moduleNameMapper": {
+      "^../services/notificationService$": "<rootDir>/src/__mocks__/notificationService.js",
+      "^../../services/notificationService$": "<rootDir>/src/__mocks__/notificationService.js"
+    },
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "../../backend/routes/**/*.js",
+      "../../backend/services/**/*.js",
+      "!../../backend/services/fabricService.js"
+    ]
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "jest":       "^29.7.0",
+    "supertest":  "^6.3.4",
+    "jsonwebtoken":"^9.0.2",
+    "bcrypt":     "^5.1.1"
+  }
+}

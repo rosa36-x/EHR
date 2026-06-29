@@ -1,0 +1,34 @@
+meta {
+  name: Doctor Login - OTP Verify
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/auth/doctor/otp/verify
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "{{doctor_phone}}",
+    "otp": "PASTE_OTP_FROM_SERVER_LOG_HERE"
+  }
+}
+
+// NOTE: OTP is printed to server console in dev mode (no MSG91 key set).
+// Update the otp value above before running.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("JWT token returned", function() {
+    expect(res.body.token).to.be.a("string");
+    bru.setEnvVar("doctor_token", res.body.token);
+  });
+}

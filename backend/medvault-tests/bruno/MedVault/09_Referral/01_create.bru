@@ -1,0 +1,36 @@
+meta {
+  name: Create Referral
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/referrals
+  body: multipart-form
+  auth: none
+}
+
+body:multipart-form {
+  referralID: REF0001
+  patientID: {{patient_id}}
+  fromDoctorID: {{doctor_id}}
+  toDoctorID: DOC0002
+  referralReason: GENERAL
+  file: @file(/path/to/test_referral.pdf)
+}
+
+// NOTE: referral route has no authentication middleware — intentional
+// (may be a route-level issue to review during testing).
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("referralID returned", function() {
+    expect(res.body.referralID).to.be.a("string");
+    bru.setEnvVar("referral_id", res.body.referralID);
+  });
+}

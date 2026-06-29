@@ -1,0 +1,28 @@
+meta {
+  name: Patient Login - OTP Initiate
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/auth/patient/otp/initiate
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "{{patient_phone}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("OTP_SENT status", function() {
+    expect(res.body.status).to.equal("OTP_SENT");
+  });
+}
+
+// NOTE: OTP printed to server console. Copy for the next request.

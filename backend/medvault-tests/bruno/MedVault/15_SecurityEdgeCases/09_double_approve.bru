@@ -1,0 +1,32 @@
+meta {
+  name: Security - Approve Already-Approved Request
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{base_url}}/permission-requests/{{permission_request_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
+}
+
+// permission_request_id was already approved in 11_PermissionRequest/03_approve.
+// Attempting to approve it again should fail — chaincode enforces status transitions.
+
+tests {
+  test("status 500", function() {
+    expect(res.status).to.equal(500);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error mentions already approved or invalid status", function() {
+    expect(res.body.message).to.satisfy(function(m) {
+      return m.includes("PENDING") || m.includes("already") || m.includes("Invalid");
+    });
+  });
+}

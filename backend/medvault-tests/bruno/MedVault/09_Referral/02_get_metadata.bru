@@ -1,0 +1,26 @@
+meta {
+  name: Get Referral (Metadata)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/referrals/{{referral_id}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("referral fields present", function() {
+    var d = res.body.data;
+    expect(d.fromDoctorID).to.be.a("string");
+    expect(d.toDoctorID).to.be.a("string");
+    expect(d.patientID).to.equal(bru.getEnvVar("patient_id"));
+  });
+}

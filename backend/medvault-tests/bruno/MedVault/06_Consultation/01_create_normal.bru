@@ -1,0 +1,53 @@
+meta {
+  name: Create Consultation
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/consultations
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  consultationID: CONS0001
+  patientID: {{patient_id}}
+  doctorID: {{doctor_id}}
+  diagnosis: Routine general checkup — no significant findings
+  recordType: GENERAL
+  file: @file(/path/to/test_consultation.pdf)
+}
+
+// BEFORE RUNNING:
+// 1. Create a small dummy PDF at the path above, e.g.:
+//    echo "%PDF-1.4 test" > /tmp/test_consultation.pdf
+// 2. Update the file path in the body above to the actual path.
+// 3. consultationID must not already exist on the ledger.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("consultationID returned", function() {
+    expect(res.body.consultationID).to.be.a("string");
+    bru.setEnvVar("consultation_id", res.body.consultationID);
+  });
+  test("CID returned (IPFS upload)", function() {
+    expect(res.body.consultationCID).to.be.a("string");
+    expect(res.body.consultationCID.length).to.be.at.least(10);
+  });
+  test("encryptionKeyRef returned (KMS)", function() {
+    expect(res.body.encryptionKeyRef).to.match(/^KEY/);
+  });
+  test("sensitivityLevel NORMAL for GENERAL record", function() {
+    expect(res.body.sensitivityLevel).to.equal("NORMAL");
+  });
+}

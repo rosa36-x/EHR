@@ -1,0 +1,28 @@
+meta {
+  name: Get Treatment Relationship
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/treatment-relationships/{{treatment_relationship_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("status ACTIVE", function() {
+    expect(res.body.data.status).to.equal("ACTIVE");
+  });
+  test("doctorID and patientID match", function() {
+    expect(res.body.data.doctorID).to.equal(bru.getEnvVar("doctor_id"));
+    expect(res.body.data.patientID).to.equal(bru.getEnvVar("patient_id"));
+  });
+}

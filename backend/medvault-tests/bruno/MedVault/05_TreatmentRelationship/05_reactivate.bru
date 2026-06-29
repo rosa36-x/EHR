@@ -1,0 +1,24 @@
+meta {
+  name: Reactivate Treatment Relationship
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/treatment-relationships/{{treatment_relationship_id}}/reactivate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

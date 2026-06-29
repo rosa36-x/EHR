@@ -1,0 +1,29 @@
+meta {
+  name: Get Audit Log by ID
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/audits/{{audit_id}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("audit log fields present", function() {
+    var d = res.body.data;
+    expect(d.actorID).to.be.a("string");
+    expect(d.actorRole).to.be.a("string");
+    expect(d.action).to.be.a("string");
+    expect(d.resourceType).to.be.a("string");
+    expect(d.resourceID).to.be.a("string");
+    expect(d.timestamp).to.be.a("string");
+  });
+}

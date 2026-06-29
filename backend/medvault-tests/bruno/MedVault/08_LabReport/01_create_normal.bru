@@ -1,0 +1,38 @@
+meta {
+  name: Create Lab Report (Normal)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/labreports
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  reportID: LAB0001
+  patientID: {{patient_id}}
+  labTechID: LABTECH001
+  reportType: BLOOD_TEST
+  file: @file(/path/to/test_labreport.pdf)
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("reportID returned", function() {
+    bru.setEnvVar("lab_report_id", res.body.reportID);
+  });
+  test("sensitivityLevel NORMAL for BLOOD_TEST", function() {
+    expect(res.body.sensitivityLevel).to.equal("NORMAL");
+  });
+}

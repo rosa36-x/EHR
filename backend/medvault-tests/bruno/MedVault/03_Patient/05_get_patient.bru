@@ -1,0 +1,24 @@
+meta {
+  name: Get Patient by ID
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/patients/{{patient_id}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("patient data returned", function() {
+    expect(res.body.data.patientID).to.equal(bru.getEnvVar("patient_id"));
+    expect(res.body.data.fullName).to.be.a("string");
+  });
+}

@@ -1,0 +1,35 @@
+meta {
+  name: Doctor Register - Duplicate
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/doctors/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "fullName": "Dr. Arjun Mehta Clone",
+    "licenseNumber": "NMC12345",
+    "specialization": "General Medicine",
+    "hospitalID": "HOSP001",
+    "phone": "{{doctor_phone}}",
+    "email": "{{doctor_email}}",
+    "password": "{{doctor_password}}"
+  }
+}
+
+tests {
+  test("status 400 for duplicate", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("meaningful error message", function() {
+    expect(res.body.message).to.include("already registered");
+  });
+}

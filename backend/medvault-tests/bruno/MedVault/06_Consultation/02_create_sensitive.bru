@@ -1,0 +1,39 @@
+meta {
+  name: Create Consultation - Sensitive (Psychiatry)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/consultations
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  consultationID: CONS0002
+  patientID: {{patient_id}}
+  doctorID: {{doctor_id}}
+  diagnosis: Generalised Anxiety Disorder — initial assessment
+  recordType: PSYCHIATRY
+  file: @file(/path/to/test_consultation.pdf)
+}
+
+// PSYCHIATRY is a SENSITIVE type — sensitivity gate will be applied on reads.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("sensitivityLevel SENSITIVE for PSYCHIATRY", function() {
+    expect(res.body.sensitivityLevel).to.equal("SENSITIVE");
+    bru.setEnvVar("sensitive_consultation_id", res.body.consultationID);
+  });
+}

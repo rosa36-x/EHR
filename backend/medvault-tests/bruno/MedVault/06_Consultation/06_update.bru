@@ -1,0 +1,35 @@
+meta {
+  name: Update Consultation
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{base_url}}/consultations/{{consultation_id}}
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  diagnosis: Routine checkup — follow-up recommended in 3 months
+  file: @file(/path/to/test_consultation_updated.pdf)
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("new CID returned (re-uploaded to IPFS)", function() {
+    expect(res.body.consultationCID).to.be.a("string");
+  });
+  test("new encryptionKeyRef (new key generated per update)", function() {
+    expect(res.body.encryptionKeyRef).to.match(/^KEY/);
+  });
+}

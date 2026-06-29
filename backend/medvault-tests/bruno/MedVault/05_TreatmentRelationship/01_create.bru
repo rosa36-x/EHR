@@ -1,0 +1,36 @@
+meta {
+  name: Create Treatment Relationship
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/treatment-relationships
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "{{patient_id}}",
+    "relationshipType": "RECENT_APPOINTMENT",
+    "notes": "Initial consultation for general checkup"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("relationshipID returned with TR prefix", function() {
+    expect(res.body.relationshipID).to.match(/^TR/);
+    bru.setEnvVar("treatment_relationship_id", res.body.relationshipID);
+  });
+}

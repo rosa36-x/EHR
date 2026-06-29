@@ -1,0 +1,29 @@
+meta {
+  name: Get Sensitive Consultation - After Approval (Should Succeed)
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/consultations/{{sensitive_consultation_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+// This request should now succeed because the patient approved access in step 3.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS — access granted after approval", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("sensitivityLevel is SENSITIVE", function() {
+    expect(res.body.data.sensitivityLevel).to.equal("SENSITIVE");
+  });
+}

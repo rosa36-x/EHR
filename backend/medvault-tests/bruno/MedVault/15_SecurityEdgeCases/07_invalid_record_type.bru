@@ -1,0 +1,36 @@
+meta {
+  name: Security - Invalid recordType on Consultation Create
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/consultations
+  body: multipart-form
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:multipart-form {
+  consultationID: CONS_INVALID_TYPE_TEST
+  patientID: {{patient_id}}
+  doctorID: {{doctor_id}}
+  diagnosis: Test diagnosis
+  recordType: NOT_A_REAL_TYPE
+  file: @file(/path/to/test_consultation.pdf)
+}
+
+tests {
+  test("status 500", function() {
+    expect(res.status).to.equal(500);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error mentions invalid recordType", function() {
+    expect(res.body.message).to.include("recordType").or.include("Invalid");
+  });
+}

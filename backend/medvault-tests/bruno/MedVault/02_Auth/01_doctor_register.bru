@@ -1,0 +1,37 @@
+meta {
+  name: Doctor Register
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/doctors/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "fullName": "Dr. Arjun Mehta",
+    "licenseNumber": "NMC12345",
+    "specialization": "General Medicine",
+    "hospitalID": "HOSP001",
+    "phone": "{{doctor_phone}}",
+    "email": "{{doctor_email}}",
+    "password": "{{doctor_password}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("doctorID returned and has DOC prefix", function() {
+    expect(res.body.doctorID).to.be.a("string");
+    expect(res.body.doctorID).to.match(/^DOC/);
+    bru.setEnvVar("doctor_id", res.body.doctorID);
+  });
+}

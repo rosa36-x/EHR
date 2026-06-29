@@ -1,0 +1,33 @@
+meta {
+  name: Get Sensitive Consultation - No Permission (ACCESS_DENIED)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/consultations/{{sensitive_consultation_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+// Expected: ACCESS_DENIED because no permission request has been approved yet.
+// The server returns 500 with status ACCESS_DENIED (service layer returns it
+// as a non-exception result, which the route maps to 500).
+
+tests {
+  test("denied without permission", function() {
+    // Route maps ACCESS_DENIED → 500 (service-level result, not exception)
+    expect(res.status).to.equal(500);
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+  test("requiresPermission flag set", function() {
+    expect(res.body.requiresPermission).to.equal(true);
+  });
+  test("resourceID present in response", function() {
+    expect(res.body.resourceID).to.be.a("string");
+  });
+}

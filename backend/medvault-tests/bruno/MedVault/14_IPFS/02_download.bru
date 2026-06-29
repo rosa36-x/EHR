@@ -1,0 +1,26 @@
+meta {
+  name: IPFS Download by CID
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/ipfs/download/{{ipfs_test_cid}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("Content-Type is octet-stream", function() {
+    expect(res.headers["content-type"]).to.include("application/octet-stream");
+  });
+  test("Content-Disposition is attachment", function() {
+    expect(res.headers["content-disposition"]).to.include("attachment");
+  });
+  test("response body non-empty", function() {
+    expect(res.body).to.not.be.empty;
+  });
+}

@@ -1,0 +1,29 @@
+meta {
+  name: Security - Non-Existent Record ID
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/consultations/CONS_DOES_NOT_EXIST_9999
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 500", function() {
+    // Fabric throws on missing key — maps to 500
+    expect(res.status).to.equal(500);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("error message present", function() {
+    expect(res.body.message).to.be.a("string");
+    expect(res.body.message.length).to.be.at.least(5);
+  });
+}

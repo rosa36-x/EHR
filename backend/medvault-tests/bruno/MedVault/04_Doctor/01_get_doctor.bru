@@ -1,0 +1,30 @@
+meta {
+  name: Get Doctor by ID
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/doctors/{{doctor_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("passwordHash not exposed", function() {
+    expect(res.body.data.passwordHash).to.be.undefined;
+  });
+  test("doctorID matches", function() {
+    expect(res.body.data.doctorID).to.equal(bru.getEnvVar("doctor_id"));
+  });
+}

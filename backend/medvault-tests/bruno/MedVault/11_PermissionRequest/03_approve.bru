@@ -1,0 +1,31 @@
+meta {
+  name: Approve Permission Request (Patient)
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{base_url}}/permission-requests/{{permission_request_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
+}
+
+// This must be called WITH the patient's token — authorizeRoles("patient") enforced.
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("accessExpires is ~48 hours from now", function() {
+    var accessExpires = new Date(res.body.accessExpires).getTime();
+    var diffHours     = (accessExpires - Date.now()) / (1000 * 60 * 60);
+    expect(diffHours).to.be.within(47, 49);
+  });
+}
