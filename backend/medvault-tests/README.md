@@ -91,14 +91,6 @@ npm run test:coverage
 JWT_SECRET=medvault-dev-secret-change-in-prod   # must match backend
 MONGODB_URI_TEST=mongodb://localhost:27017/medvault_test
 ```
-
-## Bugs Fixed
-
-| ID     | File                      | Description |
-|--------|---------------------------|-------------|
-| BUG-01 | `routes/patient.js`       | `patientID` referenced before declaration in `/complete-registration` — causes `ReferenceError` on every patient registration |
-| BUG-02 | `routes/auditHistory.js`  | Inverted ownership check: patients could not see audit logs for accesses TO their own records (checked `actorID` instead of `resourceID`) |
-
 ## Known Test Notes
 
 - **Bruno 06/05** (`get_sensitive_denied`) and **06/04** (`access_after_approval` in folder 11): the route maps `ACCESS_DENIED` from the service layer to HTTP 500 (not 403). This is a known design point in the current routes — test assertions reflect actual behaviour.
