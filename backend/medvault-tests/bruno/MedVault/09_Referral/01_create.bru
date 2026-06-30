@@ -19,10 +19,9 @@ body:multipart-form {
   file: @file(/path/to/test_referral.pdf)
 }
 
-// NOTE: referral route has no authentication middleware — intentional
-// (may be a route-level issue to review during testing).
-
 tests {
+  // NOTE: referral route has no authentication middleware — intentional
+  // (may be a route-level issue to review during testing).
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

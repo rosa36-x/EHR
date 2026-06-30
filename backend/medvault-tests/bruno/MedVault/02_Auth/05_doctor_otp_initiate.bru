@@ -17,6 +17,9 @@ body:json {
 }
 
 tests {
+  // NOTE: In dev mode, the OTP is printed to the server console.
+  // Copy the OTP from the console log and paste it into the
+  // 06_doctor_otp_verify request before running it.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });
@@ -24,7 +27,3 @@ tests {
     expect(res.body.status).to.equal("OTP_SENT");
   });
 }
-
-// NOTE: In dev mode, the OTP is printed to the server console.
-// Copy the OTP from the console log and paste it into the
-// 06_doctor_otp_verify request before running it.

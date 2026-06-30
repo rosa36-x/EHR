@@ -23,13 +23,12 @@ body:multipart-form {
   file: @file(/path/to/test_consultation.pdf)
 }
 
-// BEFORE RUNNING:
-// 1. Create a small dummy PDF at the path above, e.g.:
-//    echo "%PDF-1.4 test" > /tmp/test_consultation.pdf
-// 2. Update the file path in the body above to the actual path.
-// 3. consultationID must not already exist on the ledger.
-
 tests {
+  // BEFORE RUNNING:
+  // 1. Create a small dummy PDF at the path above, e.g.:
+  //    echo "%PDF-1.4 test" > /tmp/test_consultation.pdf
+  // 2. Update the file path in the body above to the actual path.
+  // 3. consultationID must not already exist on the ledger.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

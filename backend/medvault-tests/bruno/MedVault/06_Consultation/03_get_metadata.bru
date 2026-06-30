@@ -14,11 +14,10 @@ auth:bearer {
   token: {{doctor_token}}
 }
 
-// Prerequisites: active treatment relationship must exist between
-// doctor_id and patient_id (run 05_TreatmentRelationship/01 first,
-// and 05/05_reactivate if you ran the dormant test).
-
 tests {
+  // Prerequisites: active treatment relationship must exist between
+  // doctor_id and patient_id (run 05_TreatmentRelationship/01 first,
+  // and 05/05_reactivate if you ran the dormant test).
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

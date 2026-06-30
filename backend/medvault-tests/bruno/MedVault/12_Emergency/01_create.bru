@@ -19,10 +19,9 @@ body:json {
   }
 }
 
-// NOTE: emergencyAccessID in body is ignored — service auto-generates via generateID("emergency").
-// The body field is vestigial; the route passes it through but the service overrides it.
-
 tests {
+  // NOTE: emergencyAccessID in body is ignored — service auto-generates via generateID("emergency").
+  // The body field is vestigial; the route passes it through but the service overrides it.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

@@ -18,6 +18,7 @@ body:json {
 }
 
 tests {
+  // NOTE: OTP is printed to the server console. Copy it for the next step.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });
@@ -29,5 +30,3 @@ tests {
     bru.setEnvVar("patient_reg_txn_id", res.body.transactionID);
   });
 }
-
-// NOTE: OTP printed to server console. Copy it for the next step.

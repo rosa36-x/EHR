@@ -14,10 +14,9 @@ auth:bearer {
   token: {{doctor_token}}
 }
 
-// /approve is restricted to role "patient" via authorizeRoles().
-// Sending a doctor token should yield 403.
-
 tests {
+  // /approve is restricted to role "patient" via authorizeRoles().
+  // Sending a doctor token should yield 403.
   test("status 403", function() {
     expect(res.status).to.equal(403);
   });

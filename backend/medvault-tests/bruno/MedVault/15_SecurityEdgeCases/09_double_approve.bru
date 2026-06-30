@@ -14,10 +14,9 @@ auth:bearer {
   token: {{patient_token}}
 }
 
-// permission_request_id was already approved in 11_PermissionRequest/03_approve.
-// Attempting to approve it again should fail — chaincode enforces status transitions.
-
 tests {
+  // permission_request_id was already approved in 11_PermissionRequest/03_approve.
+  // Attempting to approve it again should fail — chaincode enforces status transitions.
   test("status 500", function() {
     expect(res.status).to.equal(500);
   });

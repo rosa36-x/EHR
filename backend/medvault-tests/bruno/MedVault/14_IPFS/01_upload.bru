@@ -14,9 +14,8 @@ body:multipart-form {
   file: @file(/path/to/test_ipfs_payload.pdf)
 }
 
-// Update file path before running.
-
 tests {
+  // Update file path before running.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

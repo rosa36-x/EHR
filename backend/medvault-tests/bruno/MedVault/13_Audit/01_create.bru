@@ -21,11 +21,10 @@ body:json {
   }
 }
 
-// NOTE: The /audits route generates its OWN auditID via generateID() and
-// ignores the auditID in the body — the body field is therefore vestigial.
-// The returned auditID from the service will have the real AUD prefix.
-
 tests {
+  // NOTE: The /audits route generates its OWN auditID via generateID() and
+  // ignores the auditID in the body — the body field is therefore vestigial.
+  // The returned auditID from the service will have the real AUD prefix.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

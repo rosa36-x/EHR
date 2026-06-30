@@ -22,10 +22,9 @@ body:json {
   }
 }
 
-// NOTE: Update `otp` from the server console before running.
-// transactionID is set automatically by the previous request.
-
 tests {
+  // NOTE: Update `otp` from the server console before running.
+  // transactionID is set automatically by the previous request.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

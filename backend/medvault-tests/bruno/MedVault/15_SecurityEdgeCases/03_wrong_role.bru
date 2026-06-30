@@ -21,10 +21,9 @@ body:json {
   }
 }
 
-// treatment-relationships POST is restricted to role "doctor" via authorizeRoles().
-// Sending a patient token should yield 403.
-
 tests {
+  // treatment-relationships POST is restricted to role "doctor" via authorizeRoles().
+  // Sending a patient token should yield 403.
   test("status 403", function() {
     expect(res.status).to.equal(403);
   });

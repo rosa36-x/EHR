@@ -17,6 +17,7 @@ body:json {
 }
 
 tests {
+  // NOTE: OTP printed to server console. Copy for the next request.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });
@@ -24,5 +25,3 @@ tests {
     expect(res.body.status).to.equal("OTP_SENT");
   });
 }
-
-// NOTE: OTP printed to server console. Copy for the next request.

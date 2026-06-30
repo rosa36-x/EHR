@@ -20,9 +20,8 @@ body:json {
   }
 }
 
-// Missing: resourceType, resourceID, reason
-
 tests {
+  // Missing: resourceType, resourceID, reason
   test("status 400", function() {
     expect(res.status).to.equal(400);
   });

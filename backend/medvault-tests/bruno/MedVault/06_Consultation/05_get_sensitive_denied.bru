@@ -14,11 +14,10 @@ auth:bearer {
   token: {{doctor_token}}
 }
 
-// Expected: ACCESS_DENIED because no permission request has been approved yet.
-// The server returns 500 with status ACCESS_DENIED (service layer returns it
-// as a non-exception result, which the route maps to 500).
-
 tests {
+  // Expected: ACCESS_DENIED because no permission request has been approved yet.
+  // The server returns 500 with status ACCESS_DENIED (service layer returns it
+  // as a non-exception result, which the route maps to 500).
   test("denied without permission", function() {
     // Route maps ACCESS_DENIED → 500 (service-level result, not exception)
     expect(res.status).to.equal(500);

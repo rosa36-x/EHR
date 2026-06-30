@@ -14,9 +14,8 @@ auth:bearer {
   token: {{patient_token}}
 }
 
-// This must be called WITH the patient's token — authorizeRoles("patient") enforced.
-
 tests {
+  // This must be called WITH the patient's token — authorizeRoles("patient") enforced.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

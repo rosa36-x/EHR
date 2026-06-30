@@ -74,8 +74,11 @@ Thumbs.db
 *.local.bru
 local.bru
 
-backend/medvault-tests/bruno/MedVault/environments/LocalDev.bru
+backend/medvault-tests/bruno/MedVault/environments/Local Dev.bru
 coverage/
 .nyc_output/
 *.log
 logs/
+
+backend/data/id_store.json
+backend/temp/

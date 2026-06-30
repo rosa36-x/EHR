@@ -4,14 +4,13 @@ meta {
   seq: 8
 }
 
-// To run this test:
-// 1. Register a SECOND doctor (different phone/email/license).
-// 2. Log in as that second doctor, get their token.
-// 3. Paste the second doctor's token here.
-// 4. That doctor has no treatment relationship with patient_id,
-//    so accessing the normal consultation should be denied.
-
 get {
+  // To run this test:
+  // 1. Register a SECOND doctor (different phone/email/license).
+  // 2. Log in as that second doctor, get their token.
+  // 3. Paste the second doctor's token here.
+  // 4. That doctor has no treatment relationship with patient_id,
+  //    so accessing the normal consultation should be denied.
   url: {{base_url}}/consultations/{{consultation_id}}
   body: none
   auth: bearer

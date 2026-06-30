@@ -23,9 +23,8 @@ body:multipart-form {
   file: @file(/path/to/test_consultation.pdf)
 }
 
-// PSYCHIATRY is a SENSITIVE type — sensitivity gate will be applied on reads.
-
 tests {
+  // PSYCHIATRY is a SENSITIVE type — sensitivity gate will be applied on reads.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

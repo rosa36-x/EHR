@@ -23,9 +23,8 @@ body:json {
   }
 }
 
-// Prerequisites: sensitive_consultation_id must be set (run 06/02 first).
-
 tests {
+  // Prerequisites: sensitive_consultation_id must be set (run 06/02 first).
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

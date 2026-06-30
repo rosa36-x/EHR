@@ -4,11 +4,10 @@ meta {
   seq: 5
 }
 
-// To test this: first create a NEW permission request for a different resource,
-// then call this endpoint with its ID. Update permission_request_id_2 env var manually,
-// or re-run step 01 for a different resourceID and use that requestID here.
-
 patch {
+  // To test this: first create a NEW permission request for a different resource,
+  // then call this endpoint with its ID. Update permission_request_id_2 env var manually,
+  // or re-run step 01 for a different resourceID and use that requestID here.
   url: {{base_url}}/permission-requests/PREQ_ID_FOR_REJECTION_TEST/reject
   body: none
   auth: bearer
@@ -18,9 +17,8 @@ auth:bearer {
   token: {{patient_token}}
 }
 
-// Replace PREQ_ID_FOR_REJECTION_TEST with an actual PENDING requestID.
-
 tests {
+  // Replace PREQ_ID_FOR_REJECTION_TEST with an actual PENDING requestID.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

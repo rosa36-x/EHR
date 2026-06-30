@@ -14,9 +14,8 @@ auth:bearer {
   token: {{doctor_token}}
 }
 
-// This request should now succeed because the patient approved access in step 3.
-
 tests {
+  // This request should now succeed because the patient approved access in step 3.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

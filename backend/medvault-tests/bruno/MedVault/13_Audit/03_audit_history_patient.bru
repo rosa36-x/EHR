@@ -14,18 +14,17 @@ auth:bearer {
   token: {{patient_token}}
 }
 
-// This tests BUG-02 fix: patient should be able to view audit logs where
-// resourceID matches their patientID (records about their data being accessed),
-// not just logs where they were the actor.
-// The audit log created in 01_create has resourceID = consultation_id,
-// which itself references patient_id. However, the audit log's resourceID
-// field stores the consultation/record ID, not patientID directly.
-//
-// For a cleaner BUG-02 test: the auto-generated audit logs from record
-// creation (e.g. from 06_Consultation/01) have resourceID = patient_id.
-// Those are the logs where this fix matters. Use one of those auditIDs here.
-
 tests {
+  // This tests BUG-02 fix: patient should be able to view audit logs where
+  // resourceID matches their patientID (records about their data being accessed),
+  // not just logs where they were the actor.
+  // The audit log created in 01_create has resourceID = consultation_id,
+  // which itself references patient_id. However, the audit log's resourceID
+  // field stores the consultation/record ID, not patientID directly.
+  //
+  // For a cleaner BUG-02 test: the auto-generated audit logs from record
+  // creation (e.g. from 06_Consultation/01) have resourceID = patient_id.
+  // Those are the logs where this fix matters. Use one of those auditIDs here.
   test("status 200 or 403", function() {
     // 200 = patient can see this audit log (resourceID matches their data)
     // 403 = patient cannot see this specific audit log (expected for some)

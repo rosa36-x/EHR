@@ -17,10 +17,9 @@ body:json {
   }
 }
 
-// NOTE: OTP is printed to server console in dev mode (no MSG91 key set).
-// Update the otp value above before running.
-
 tests {
+  // NOTE: OTP is printed to server console in dev mode (no MSG91 key set).
+  // Update the otp value above before running.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

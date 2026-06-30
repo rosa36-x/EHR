@@ -4,6 +4,7 @@
 
 ```
 medvault-tests/
+├── fix_medvault_bugs_v2.sh        ← Run this FIRST (patches BUG-01 + BUG-02)
 ├── bruno/
 │   └── MedVault/
 │       ├── bruno.json
@@ -53,7 +54,13 @@ medvault-tests/
 
 ## Quick Start
 
-### 1 — Bruno (functional API testing against live backend)
+### 1 — Apply bug fixes
+```bash
+# Run from repo root (folder that contains backend/)
+bash medvault-tests/fix_medvault_bugs_v2.sh
+```
+
+### 2 — Bruno (functional API testing against live backend)
 
 **Prerequisites:** Fabric network running, MongoDB running, backend running (`node backend/server.js`)
 
@@ -64,7 +71,7 @@ medvault-tests/
 
 **Folder run order matters** — later folders depend on env vars (`doctor_token`, `patient_id`, etc.) set by earlier ones.
 
-### 2 — Jest (unit + integration tests with mocked Fabric/IPFS/KMS)
+### 3 — Jest (unit + integration tests with mocked Fabric/IPFS/KMS)
 
 **Prerequisites:** MongoDB reachable (defaults to `mongodb://localhost:27017/medvault_test`)
 
@@ -91,6 +98,14 @@ npm run test:coverage
 JWT_SECRET=medvault-dev-secret-change-in-prod   # must match backend
 MONGODB_URI_TEST=mongodb://localhost:27017/medvault_test
 ```
+
+## Bugs Fixed
+
+| ID     | File                      | Description |
+|--------|---------------------------|-------------|
+| BUG-01 | `routes/patient.js`       | `patientID` referenced before declaration in `/complete-registration` — causes `ReferenceError` on every patient registration |
+| BUG-02 | `routes/auditHistory.js`  | Inverted ownership check: patients could not see audit logs for accesses TO their own records (checked `actorID` instead of `resourceID`) |
+
 ## Known Test Notes
 
 - **Bruno 06/05** (`get_sensitive_denied`) and **06/04** (`access_after_approval` in folder 11): the route maps `ACCESS_DENIED` from the service layer to HTTP 500 (not 403). This is a known design point in the current routes — test assertions reflect actual behaviour.
