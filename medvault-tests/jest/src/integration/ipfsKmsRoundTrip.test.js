@@ -14,20 +14,20 @@
 
 'use strict';
 
-jest.mock('../../../backend/services/fabricService',      () => require('../__mocks__/fabricService'));
-jest.mock('../../../backend/services/notificationService',() => require('../__mocks__/notificationService'));
+jest.mock('../../../../backend/services/fabricService',      () => require('../__mocks__/fabricService'));
+jest.mock('../../../../backend/services/notificationService',() => require('../__mocks__/notificationService'));
 
 // Use the REAL ipfsService and kmsService mocks (not jest.requireActual),
 // so we can inspect calls while avoiding a live IPFS/KMS dependency.
-jest.mock('../../../backend/services/ipfsService', () => require('../__mocks__/ipfsService'));
-jest.mock('../../../backend/services/kmsService',  () => require('../__mocks__/kmsService'));
+jest.mock('../../../../backend/services/ipfsService', () => require('../__mocks__/ipfsService'));
+jest.mock('../../../../backend/services/kmsService',  () => require('../__mocks__/kmsService'));
 
 const supertest  = require('supertest');
-const app        = require('../../../backend/server');
+const app        = require('../../../../backend/server');
 const { makeToken } = require('../helpers');
-const ipfsMock   = require('../../../backend/services/ipfsService');
-const kmsMock    = require('../../../backend/services/kmsService');
-const fabricMock = require('../../../backend/services/fabricService');
+const ipfsMock   = require('../../../../backend/services/ipfsService');
+const kmsMock    = require('../../../../backend/services/kmsService');
+const fabricMock = require('../../../../backend/services/fabricService');
 
 process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/medvault_test';
 

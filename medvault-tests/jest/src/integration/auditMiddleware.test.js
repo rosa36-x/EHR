@@ -14,15 +14,15 @@
 
 'use strict';
 
-jest.mock('../../../backend/services/fabricService',       () => require('../__mocks__/fabricService'));
-jest.mock('../../../backend/services/ipfsService',         () => require('../__mocks__/ipfsService'));
-jest.mock('../../../backend/services/kmsService',          () => require('../__mocks__/kmsService'));
-jest.mock('../../../backend/services/notificationService', () => require('../__mocks__/notificationService'));
+jest.mock('../../../../backend/services/fabricService',       () => require('../__mocks__/fabricService'));
+jest.mock('../../../../backend/services/ipfsService',         () => require('../__mocks__/ipfsService'));
+jest.mock('../../../../backend/services/kmsService',          () => require('../__mocks__/kmsService'));
+jest.mock('../../../../backend/services/notificationService', () => require('../__mocks__/notificationService'));
 
 const supertest    = require('supertest');
-const app          = require('../../../backend/server');
+const app          = require('../../../../backend/server');
 const { makeToken }= require('../helpers');
-const fabricMock   = require('../../../backend/services/fabricService');
+const fabricMock   = require('../../../../backend/services/fabricService');
 
 process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/medvault_test';
 

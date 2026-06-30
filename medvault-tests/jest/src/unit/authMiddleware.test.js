@@ -2,7 +2,7 @@
  * unit/authMiddleware.test.js
  *
  * Tests the REAL authMiddleware functions:
- *   - authenticateToken  — verifies the JWT and populates req.user
+ *   - authenticate  — verifies the JWT and populates req.user
  *   - authorizeRoles     — enforces role-based access control
  *
  * Uses in-process Express stubs; no Fabric/IPFS/MongoDB needed.
@@ -15,15 +15,15 @@ const supertest  = require('supertest');
 const { makeToken, expiredToken } = require('../helpers');
 
 // Load the REAL middleware (no mock)
-const { authenticateToken, authorizeRoles } =
-  jest.requireActual('../../../backend/services/authMiddleware');
+const { authenticate, authorizeRoles } =
+  jest.requireActual('../../../../backend/services/authMiddleware');
 
 // ── minimal test app ───────────────────────────────────────────────────────────
 function makeApp(roles = []) {
   const app = express();
   app.use(express.json());
 
-  const guards = [authenticateToken];
+  const guards = [authenticate];
   if (roles.length) guards.push(authorizeRoles(...roles));
 
   app.get('/protected', ...guards, (req, res) =>
@@ -32,8 +32,8 @@ function makeApp(roles = []) {
   return app;
 }
 
-// ── authenticateToken ─────────────────────────────────────────────────────────
-describe('authenticateToken', () => {
+// ── authenticate ─────────────────────────────────────────────────────────
+describe('authenticate', () => {
   test('valid doctor token → 200, req.user populated', async () => {
     const token = makeToken('doctor', 'DOC0001');
     const res   = await supertest(makeApp())

@@ -27,7 +27,7 @@ beforeAll(() => {
   process.env.ID_STORE_PATH = tmpStore;
   // Clear module cache to force re-require with new env
   jest.resetModules();
-  idService = require('../../../backend/services/idService');
+  idService = require('../../../../backend/services/idService');
 });
 
 afterAll(() => {
@@ -45,8 +45,8 @@ const prefixMap = {
   consent:      'CON',
   audit:        'AUD',
   emergency:    'EA',
-  treatmentRel: 'TR',
-  permReq:      'PREQ',
+  treatmentRelationship: 'TR',
+  permissionRequest:    'PREQ',
 };
 
 describe('idService — prefix correctness', () => {
@@ -62,7 +62,7 @@ describe('idService — prefix correctness', () => {
 describe('idService — sequential monotonic IDs', () => {
   test('same entity type produces strictly increasing numeric suffixes', () => {
     jest.resetModules();
-    const svc  = require('../../../backend/services/idService');
+    const svc  = require('../../../../backend/services/idService');
     const ids  = Array.from({ length: 10 }, () => svc.generateID('consultation'));
     const nums = ids.map((id) => parseInt(id.replace(/^CONS/, ''), 10));
 
@@ -75,7 +75,7 @@ describe('idService — sequential monotonic IDs', () => {
 describe('idService — uniqueness under concurrent calls', () => {
   test('50 concurrent generateID calls produce 50 unique IDs', async () => {
     jest.resetModules();
-    const svc = require('../../../backend/services/idService');
+    const svc = require('../../../../backend/services/idService');
     const ids = await Promise.all(
       Array.from({ length: 50 }, () =>
         Promise.resolve(svc.generateID('audit'))
