@@ -74,11 +74,29 @@ Thumbs.db
 *.local.bru
 local.bru
 
-backend/medvault-tests/bruno/MedVault/environments/Local Dev.bru
-coverage/
+medvault-tests/bruno/MedVault/environments/Local Dev.bru
 .nyc_output/
 *.log
 logs/
 
 backend/data/id_store.json
 backend/temp/
+
+**/node_modules/
+
+# npm logs/cache that show up locally
+.npm/
+.npm-global/
+
+# crypto material extensions (in case individual files exist outside organizations/)
+*.pem
+*.key
+*.pfx
+
+# yarn/pnpm logs, in case anyone uses them
+yarn-error.log*
+pnpm-debug.log*
+
+# editor swap files
+*.swp
+*~
