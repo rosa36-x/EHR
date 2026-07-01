@@ -12,7 +12,7 @@
   "jest": {
     "testEnvironment": "node",
     "testTimeout": 30000,
-    "setupFilesAfterFramework": [],
+    "globalSetup": "<rootDir>/jest.globalSetup.js",
     "moduleNameMapper": {
       "^../services/notificationService$": "<rootDir>/src/__mocks__/notificationService.js",
       "^../../services/notificationService$": "<rootDir>/src/__mocks__/notificationService.js"

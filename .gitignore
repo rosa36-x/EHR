@@ -53,6 +53,9 @@ backend/medvault-tests.zip
 # Local KMS data
 # =========================
 backend/data/kms_store.json
+backend/data/id_store.json
+medvault-tests/jest/data/kms_store.json
+medvault-tests/jest/data/id_store.json
 
 # =========================
 # Temporary scripts

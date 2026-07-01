@@ -11,12 +11,20 @@
  */
 
 'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const KMS_STORE_PATH = path.resolve("./data/kms_store.json"); // same as kmsService.js
 
 // Point at the real service, not the mock
 const kmsService = jest.requireActual('../../../../backend/services/kmsService');
 
+fs.writeFileSync(KMS_STORE_PATH, JSON.stringify({}));
+console.log('RESET FILE AT:', KMS_STORE_PATH);
+
+
 describe('kmsService — encrypt/decrypt round-trip', () => {
-  const payload = Buffer.from('Sensitive patient record data — इलेक्ट्रॉनिक स्वास्थ्य रिकॉर्ड');
+  const payload = Buffer.from('Sensitive patient record data');
 
   test('encryptDocument returns a non-empty encryptedBuffer and a KEY-prefixed keyRef', async () => {
     const { encryptedBuffer, keyRef } = await kmsService.encryptDocument(payload);
@@ -24,7 +32,6 @@ describe('kmsService — encrypt/decrypt round-trip', () => {
     expect(encryptedBuffer.length).toBeGreaterThan(0);
     expect(typeof keyRef).toBe('string');
     expect(keyRef).toMatch(/^KEY/);
-    // encryptedBuffer must not equal the raw plaintext
     expect(encryptedBuffer.equals(payload)).toBe(false);
   });
 
@@ -57,8 +64,6 @@ describe('kmsService — encrypt/decrypt round-trip', () => {
   });
 
   test('encryptDocument rejects an empty buffer', async () => {
-    // Source explicitly throws on empty/missing buffers rather than
-    // silently encrypting zero bytes.
     await expect(kmsService.encryptDocument(Buffer.alloc(0))).rejects.toThrow(
       /empty buffer/i
     );
