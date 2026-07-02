@@ -20,7 +20,7 @@ jest.mock('../../../../backend/services/kmsService',                      () => 
 jest.mock('../../../../backend/services/notificationService',             () => require('../__mocks__/notificationService'));
 
 const supertest      = require('supertest');
-const app            = require('../../../../backend/server');
+const app            = require('../../../../backend/server').default;
 const { makeToken }  = require('../helpers');
 const treatmentMock    = require('../../../../backend/services/treatmentRelationshipFabricService');
 const consultationMock = require('../../../../backend/services/consultationFabricService');

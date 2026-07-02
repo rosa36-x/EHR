@@ -24,7 +24,7 @@ jest.mock('../../../../backend/services/ipfsService',         () => require('../
 jest.mock('../../../../backend/services/kmsService',          () => require('../__mocks__/kmsService'));
 
 const supertest      = require('supertest');
-const app            = require('../../../../backend/server');
+const app            = require('../../../../backend/server').default;
 const { makeToken }  = require('../helpers');
 const ipfsMock       = require('../../../../backend/services/ipfsService');
 const kmsMock        = require('../../../../backend/services/kmsService');

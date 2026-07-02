@@ -22,7 +22,7 @@ jest.mock('../../../../backend/services/kmsService',        () => require('../__
 jest.mock('../../../../backend/services/notificationService', () => require('../__mocks__/notificationService'));
 
 const supertest = require('supertest');
-const app       = require('../../../../backend/server');
+const app       = require('../../../../backend/server').default;
 const notify    = require('../../../../backend/services/notificationService');
 
 // Override MongoDB to test DB — avoids polluting dev data

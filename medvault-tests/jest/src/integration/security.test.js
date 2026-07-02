@@ -25,7 +25,7 @@ jest.mock('../../../../backend/services/kmsService',                () => requir
 jest.mock('../../../../backend/services/notificationService',       () => require('../__mocks__/notificationService'));
 
 const supertest      = require('supertest');
-const app            = require('../../../../backend/server');
+const app            = require('../../../../backend/server').default;
 const { makeToken, expiredToken } = require('../helpers');
 const fabricMock      = require('../../../../backend/services/fabricService');
 const consultationMock = require('../../../../backend/services/consultationFabricService');
