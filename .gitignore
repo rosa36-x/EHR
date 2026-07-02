@@ -103,3 +103,6 @@ pnpm-debug.log*
 # editor swap files
 *.swp
 *~
+
+medvault-tests/jest/package-lock.json
+medvault-tests/jest/package.json
