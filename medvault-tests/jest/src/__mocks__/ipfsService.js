@@ -1,35 +1,48 @@
 /**
  * __mocks__/ipfsService.js
  *
- * Replaces Helia/IPFS for unit tests. Returns deterministic CIDs
- * so tests can assert on storage paths without a running IPFS daemon.
+ * Matches the real ipfsService.js API exactly:
+ *   uploadFile(fileBuffer) -> cid string
+ *   getFile(cid, options?) -> Buffer
+ *   initIPFS(), stopIPFS(), registerShutdownHandlers() -> no-ops
+ *
+ * Deterministic in-memory round-trip so getFile can recover whatever
+ * uploadFile produced within the same test run.
  */
 
 'use strict';
 
 let _cidCounter = 1;
+const _store = new Map(); // cid -> Buffer
 
-const uploadToIPFS = jest.fn(async (buffer) => {
-  if (!buffer || buffer.length === 0) {
-    throw new Error('IPFS upload failed: empty buffer');
+const uploadFile = jest.fn(async (fileBuffer) => {
+  if (!fileBuffer || fileBuffer.byteLength === 0) {
+    throw new Error('Cannot upload empty buffer');
   }
-  return `bafymock${String(_cidCounter++).padStart(8, '0')}`;
+  const cid = `bafymock${String(_cidCounter++).padStart(8, '0')}`;
+  _store.set(cid, fileBuffer);
+  return cid;
 });
 
-const downloadFromIPFS = jest.fn(async (cid) => {
-  if (!cid || cid === 'notavalidcid12345') {
-    throw new Error(`Invalid CID: ${cid}`);
+const getFile = jest.fn(async (cid) => {
+  if (_store.has(cid)) {
+    return _store.get(cid);
   }
-  return Buffer.from('%PDF-1.4 mock content');
+  throw new Error(`Invalid CID: "${cid}"`);
 });
 
+const initIPFS = jest.fn(async () => ({ helia: {}, ipfsFs: {} }));
 const stopIPFS = jest.fn(async () => {});
+const registerShutdownHandlers = jest.fn(() => {});
 
 const __resetAll = () => {
-  uploadToIPFS.mockClear();
-  downloadFromIPFS.mockClear();
+  uploadFile.mockClear();
+  getFile.mockClear();
+  initIPFS.mockClear();
   stopIPFS.mockClear();
+  registerShutdownHandlers.mockClear();
+  _store.clear();
   _cidCounter = 1;
 };
 
-module.exports = { uploadToIPFS, downloadFromIPFS, stopIPFS, __resetAll };
+module.exports = { uploadFile, getFile, initIPFS, stopIPFS, registerShutdownHandlers, __resetAll };

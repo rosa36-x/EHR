@@ -13,6 +13,8 @@
  */
 
 'use strict';
+const { Doctor } = require('../../../../backend/services/db');
+
 
 jest.mock('../../../../backend/services/fabricService',     () => require('../__mocks__/fabricService'));
 jest.mock('../../../../backend/services/ipfsService',       () => require('../__mocks__/ipfsService'));
@@ -28,7 +30,7 @@ process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:2
 
 const DOCTOR = {
   fullName:       'Dr. Test Auth',
-  licenseNumber:  'NMC_TEST_AUTH_001',
+  licenseNumber:  'NMCTESTAUTH001', // must match /^[A-Z0-9]{5,15}$/ - no underscores
   specialization: 'General Medicine',
   hospitalID:     'HOSP001',
   phone:          '9100000001',
@@ -51,6 +53,26 @@ function extractOTPFromMockCalls() {
 
 afterEach(() => {
   notify.__clearCalls();
+});
+
+beforeAll(async () => {
+  await Doctor.deleteMany({
+    $or: [
+      { phone: DOCTOR.phone },
+      { email: DOCTOR.email },
+      { licenseNumber: DOCTOR.licenseNumber },
+    ],
+  });
+});
+
+afterAll(async () => {
+  await Doctor.deleteMany({
+    $or: [
+      { phone: DOCTOR.phone },
+      { email: DOCTOR.email },
+      { licenseNumber: DOCTOR.licenseNumber },
+    ],
+  });
 });
 
 // ── Doctor registration ────────────────────────────────────────────────────────

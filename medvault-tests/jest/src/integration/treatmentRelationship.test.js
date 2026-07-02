@@ -2,23 +2,28 @@
  * integration/treatmentRelationship.test.js
  *
  * Tests the full treatment relationship lifecycle:
- *   create → get (ACTIVE) → dormant → get (DORMANT) → reactivate → get (ACTIVE)
+ *   create -> get (ACTIVE) -> dormant -> get (DORMANT) -> reactivate -> get (ACTIVE)
  *   Plus: access guard (consultation denied when no active TR)
  *
- * Mocked:  fabricService, ipfsService, kmsService, notificationService
+ * Mocked:  treatmentRelationshipFabricService, consultationFabricService,
+ *          fabricService (low-level baseline), ipfsService, kmsService,
+ *          notificationService
  */
 
 'use strict';
 
-jest.mock('../../../../backend/services/fabricService',      () => require('../__mocks__/fabricService'));
-jest.mock('../../../../backend/services/ipfsService',        () => require('../__mocks__/ipfsService'));
-jest.mock('../../../../backend/services/kmsService',         () => require('../__mocks__/kmsService'));
-jest.mock('../../../../backend/services/notificationService',() => require('../__mocks__/notificationService'));
+jest.mock('../../../../backend/services/fabricService',                    () => require('../__mocks__/fabricService'));
+jest.mock('../../../../backend/services/treatmentRelationshipFabricService', () => require('../__mocks__/treatmentRelationshipFabricService'));
+jest.mock('../../../../backend/services/consultationFabricService',        () => require('../__mocks__/consultationFabricService'));
+jest.mock('../../../../backend/services/ipfsService',                     () => require('../__mocks__/ipfsService'));
+jest.mock('../../../../backend/services/kmsService',                      () => require('../__mocks__/kmsService'));
+jest.mock('../../../../backend/services/notificationService',             () => require('../__mocks__/notificationService'));
 
-const supertest    = require('supertest');
-const app          = require('../../../../backend/server');
-const { makeToken }= require('../helpers');
-const fabricMock   = require('../../../../backend/services/fabricService');
+const supertest      = require('supertest');
+const app            = require('../../../../backend/server');
+const { makeToken }  = require('../helpers');
+const treatmentMock    = require('../../../../backend/services/treatmentRelationshipFabricService');
+const consultationMock = require('../../../../backend/services/consultationFabricService');
 
 process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/medvault_test';
 
@@ -30,27 +35,27 @@ const TR_ID = 'TR_LIFECYCLE_001';
 let trStatus = 'ACTIVE';
 
 beforeAll(() => {
-  fabricMock.createTreatmentRelationship.mockResolvedValue({
+  treatmentMock.createTreatmentRelationship.mockResolvedValue({
     status: 'SUCCESS', relationshipID: TR_ID,
   });
 
-  fabricMock.getTreatmentRelationship.mockImplementation(async (id) => ({
+  treatmentMock.getTreatmentRelationship.mockImplementation(async (id) => ({
     status: 'SUCCESS',
     data: { relationshipID: id, doctorID: DOCTOR_ID, patientID: PATIENT_ID, status: trStatus },
   }));
 
-  fabricMock.markDormant.mockImplementation(async () => {
+  treatmentMock.markDormant.mockImplementation(async () => {
     trStatus = 'DORMANT';
     return { status: 'SUCCESS' };
   });
 
-  fabricMock.reactivate.mockImplementation(async () => {
+  treatmentMock.reactivateTreatmentRelationship.mockImplementation(async () => {
     trStatus = 'ACTIVE';
     return { status: 'SUCCESS' };
   });
 
-  // Consultation access — blocked when TR is DORMANT
-  fabricMock.getConsultation.mockImplementation(async (id, actorID) => {
+  // Consultation access - blocked when TR is DORMANT
+  consultationMock.getConsultation.mockImplementation(async (id) => {
     if (trStatus !== 'ACTIVE') {
       return {
         status:  'ACCESS_DENIED',
@@ -65,7 +70,7 @@ beforeAll(() => {
 });
 
 describe('Treatment relationship lifecycle', () => {
-  test('POST /treatment-relationships → 200, TR_ID returned', async () => {
+  test('POST /treatment-relationships -> 200, TR_ID returned', async () => {
     const res = await supertest(app)
       .post('/treatment-relationships')
       .set('Authorization', `Bearer ${doctorToken}`)
@@ -76,7 +81,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.relationshipID).toBe(TR_ID);
   });
 
-  test('GET /treatment-relationships/:id → status ACTIVE', async () => {
+  test('GET /treatment-relationships/:id -> status ACTIVE', async () => {
     const res = await supertest(app)
       .get(`/treatment-relationships/${TR_ID}`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -85,7 +90,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.data.status).toBe('ACTIVE');
   });
 
-  test('GET /consultations/:id while ACTIVE → 200', async () => {
+  test('GET /consultations/:id while ACTIVE -> 200', async () => {
     const res = await supertest(app)
       .get('/consultations/CONS_TR_TEST_001')
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -94,7 +99,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.status).toBe('SUCCESS');
   });
 
-  test('PATCH /treatment-relationships/:id/dormant → 200', async () => {
+  test('PATCH /treatment-relationships/:id/dormant -> 200', async () => {
     const res = await supertest(app)
       .patch(`/treatment-relationships/${TR_ID}/dormant`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -103,7 +108,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.status).toBe('SUCCESS');
   });
 
-  test('GET /treatment-relationships/:id → status DORMANT', async () => {
+  test('GET /treatment-relationships/:id -> status DORMANT', async () => {
     const res = await supertest(app)
       .get(`/treatment-relationships/${TR_ID}`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -112,7 +117,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.data.status).toBe('DORMANT');
   });
 
-  test('GET /consultations/:id while DORMANT → ACCESS_DENIED', async () => {
+  test('GET /consultations/:id while DORMANT -> ACCESS_DENIED', async () => {
     const res = await supertest(app)
       .get('/consultations/CONS_TR_TEST_001')
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -121,7 +126,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.status).toBe('ACCESS_DENIED');
   });
 
-  test('PATCH /treatment-relationships/:id/reactivate → 200', async () => {
+  test('PATCH /treatment-relationships/:id/reactivate -> 200', async () => {
     const res = await supertest(app)
       .patch(`/treatment-relationships/${TR_ID}/reactivate`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -130,7 +135,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.status).toBe('SUCCESS');
   });
 
-  test('GET /consultations/:id after reactivation → 200 again', async () => {
+  test('GET /consultations/:id after reactivation -> 200 again', async () => {
     const res = await supertest(app)
       .get('/consultations/CONS_TR_TEST_001')
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -139,7 +144,7 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.body.status).toBe('SUCCESS');
   });
 
-  test('patient token on POST /treatment-relationships → 403', async () => {
+  test('patient token on POST /treatment-relationships -> 403', async () => {
     const patientToken = makeToken('patient', PATIENT_ID);
     const res = await supertest(app)
       .post('/treatment-relationships')
@@ -149,8 +154,8 @@ describe('Treatment relationship lifecycle', () => {
     expect(res.status).toBe(403);
   });
 
-  test('invalid relationshipType → 500 FAILED', async () => {
-    fabricMock.createTreatmentRelationship.mockResolvedValueOnce({
+  test('invalid relationshipType -> 500 FAILED', async () => {
+    treatmentMock.createTreatmentRelationship.mockResolvedValueOnce({
       status: 'FAILED', message: 'Invalid type. Must be one of: RECENT_APPOINTMENT, ...',
     });
 

@@ -4,14 +4,22 @@
  * Verifies that the notification service mock is called with correct
  * arguments at the right moments:
  *
- *   1. Patient OTP login → sendSMS called with phone + 6-digit OTP
- *   2. Doctor OTP login  → sendSMS called with phone + 6-digit OTP
- *   3. Permission request created → sendSMS/sendEmail called to patient
- *   4. Permission request approved → sendSMS/sendEmail called to doctor
- *   5. Permission request rejected → sendSMS/sendEmail called to doctor
+ *   1. Doctor OTP login -> sendSMS called with phone + 6-digit OTP
+ *   2. Permission request created -> sendSMS/sendEmail called to patient
+ *   3. Permission request approved -> sendSMS/sendEmail called to doctor
+ *   4. Permission request rejected -> sendSMS/sendEmail called to doctor
  *
- * This test validates the mock itself is wired correctly — it does NOT
- * test real SMS/email delivery (which requires MSG91/Gmail credentials).
+ * The notify() calls inside permissionRequestFabricService.js only fire when
+ * BOTH a Doctor and PatientAuth record exist in Mongo (it looks them up to
+ * find phone numbers). So this test seeds real Mongo documents directly and
+ * leaves permissionRequestFabricService UNMOCKED, letting its real logic
+ * (including the notify() calls we're verifying) run. Only fabricService
+ * (low-level Fabric boundary), ipfsService, kmsService, and
+ * notificationService (the actual SMS/email transport) are mocked.
+ *
+ * This test validates real business logic triggers notifications correctly -
+ * it does NOT test real SMS/email delivery (which requires MSG91/Gmail
+ * credentials).
  */
 
 'use strict';
@@ -21,25 +29,26 @@ jest.mock('../../../../backend/services/ipfsService',         () => require('../
 jest.mock('../../../../backend/services/kmsService',          () => require('../__mocks__/kmsService'));
 jest.mock('../../../../backend/services/notificationService', () => require('../__mocks__/notificationService'));
 
-const supertest    = require('supertest');
-const app          = require('../../../../backend/server');
-const notify       = require('../../../../backend/services/notificationService');
-const fabricMock   = require('../../../../backend/services/fabricService');
-const { makeToken }= require('../helpers');
+const supertest       = require('supertest');
+const app             = require('../../../../backend/server');
+const notify           = require('../../../../backend/services/notificationService');
+const fabricMock       = require('../../../../backend/services/fabricService');
+const { makeToken }   = require('../helpers');
+const { PatientAuth, Doctor } = require('../../../../backend/services/db.js');
 
 process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/medvault_test';
 
 afterEach(() => notify.__clearCalls());
 
-// ── Doctor must exist in MongoDB before OTP initiate can fire ─────────────────
+// -- Doctor must exist in MongoDB before OTP initiate can fire ------------------
 const DOCTOR = {
-  fullName:      'Dr. Notify Test',
-  licenseNumber: 'NMC_NOTIFY_001',
-  specialization:'General Medicine',
-  hospitalID:    'HOSP001',
-  phone:         '9200000001',
-  email:         'notifytest@hospital.test',
-  password:      'TestPass@123',
+  fullName:       'Dr. Notify Test',
+  licenseNumber:  'NMCNOTIFY001',
+  specialization: 'General Medicine',
+  hospitalID:     'HOSP001',
+  phone:          '9200000001',
+  email:          'notifytest@hospital.test',
+  password:       'TestPass@123',
 };
 
 let doctorRegistered = false;
@@ -50,9 +59,9 @@ async function ensureDoctorRegistered() {
   doctorRegistered = true;
 }
 
-// ── OTP notifications ─────────────────────────────────────────────────────────
+// -- OTP notifications -----------------------------------------------------------
 describe('OTP notifications', () => {
-  test('Doctor OTP initiate → sendSMS called with correct phone and 6-digit OTP', async () => {
+  test('Doctor OTP initiate -> sendSMS called with correct phone and 6-digit OTP', async () => {
     await ensureDoctorRegistered();
 
     const res = await supertest(app)
@@ -68,32 +77,48 @@ describe('OTP notifications', () => {
   });
 });
 
-// ── Permission request notifications ─────────────────────────────────────────
+// -- Permission request notifications --------------------------------------------
 describe('Permission request notifications', () => {
   const DOCTOR_ID   = 'DOC_NOTIFY_001';
   const PATIENT_ID  = 'PAT_NOTIFY_001';
   const doctorToken  = makeToken('doctor',  DOCTOR_ID);
   const patientToken = makeToken('patient', PATIENT_ID);
-  const REQUEST_ID   = 'PREQ_NOTIFY_001';
 
-  beforeAll(() => {
-    fabricMock.createPermissionRequest.mockResolvedValue({
-      status:    'SUCCESS',
-      requestID: REQUEST_ID,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    });
-    fabricMock.approvePermissionRequest.mockResolvedValue({
-      status:        'SUCCESS',
-      accessExpires: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-    });
-    fabricMock.rejectPermissionRequest.mockResolvedValue({ status: 'SUCCESS' });
-    fabricMock.getPermissionRequest.mockResolvedValue({
-      status: 'SUCCESS',
-      data: { requestID: REQUEST_ID, doctorID: DOCTOR_ID, patientID: PATIENT_ID, status: 'PENDING' },
+  let firstRequestID;
+
+  beforeAll(async () => {
+    // Seed real Mongo docs so PatientAuth.findOne/Doctor.findOne inside the
+    // real service succeed and notify() actually fires.
+    await Doctor.findOneAndUpdate(
+      { doctorID: DOCTOR_ID },
+      {
+        doctorID: DOCTOR_ID, fullName: 'Dr. Notify Recipient', licenseNumber: 'NMCNOTIFY002',
+        specialization: 'General Medicine', hospitalID: 'HOSP001', phone: '9200000002',
+        email: 'notifydoc@hospital.test', passwordHash: 'placeholder', isVerified: true,
+        createdAt: new Date().toISOString(),
+      },
+      { upsert: true }
+    );
+    await PatientAuth.findOneAndUpdate(
+      { patientID: PATIENT_ID },
+      { patientID: PATIENT_ID, phone: '9300000002', createdAt: new Date().toISOString() },
+      { upsert: true }
+    );
+
+    // approve/reject need GetPermissionRequest to resolve to a record whose
+    // doctorID matches the Doctor we just seeded above.
+    fabricMock.__contract.evaluateTransaction.mockImplementation(async (fnName, id) => {
+      if (fnName === 'GetPermissionRequest') {
+        return Buffer.from(JSON.stringify({
+          requestID: id, status: 'PENDING', doctorID: DOCTOR_ID, patientID: PATIENT_ID,
+          resourceType: 'CONSULTATION', resourceID: 'CONS_NOTIFY_001',
+        }));
+      }
+      return Buffer.from('{}');
     });
   });
 
-  test('POST /permission-requests → patient notified (SMS or email)', async () => {
+  test('POST /permission-requests -> patient notified (SMS or email)', async () => {
     const res = await supertest(app)
       .post('/permission-requests')
       .set('Authorization', `Bearer ${doctorToken}`)
@@ -105,16 +130,17 @@ describe('Permission request notifications', () => {
       });
 
     expect(res.status).toBe(200);
-    // Notification to patient should have fired
+    firstRequestID = res.body.requestID;
+
     const totalCalls = notify.sendSMS.mock.calls.length + notify.sendEmail.mock.calls.length;
     expect(totalCalls).toBeGreaterThanOrEqual(1);
   });
 
-  test('PATCH /approve → doctor notified', async () => {
+  test('PATCH /approve -> doctor notified', async () => {
     notify.__clearCalls();
 
     const res = await supertest(app)
-      .patch(`/permission-requests/${REQUEST_ID}/approve`)
+      .patch(`/permission-requests/${firstRequestID}/approve`)
       .set('Authorization', `Bearer ${patientToken}`);
 
     expect(res.status).toBe(200);
@@ -122,17 +148,22 @@ describe('Permission request notifications', () => {
     expect(totalCalls).toBeGreaterThanOrEqual(1);
   });
 
-  test('PATCH /reject → doctor notified', async () => {
-    // Reset mock status so we can reject
-    fabricMock.getPermissionRequest.mockResolvedValueOnce({
-      status: 'SUCCESS',
-      data: { requestID: REQUEST_ID, doctorID: DOCTOR_ID, patientID: PATIENT_ID, status: 'PENDING' },
-    });
-    fabricMock.rejectPermissionRequest.mockResolvedValueOnce({ status: 'SUCCESS' });
+  test('PATCH /reject -> doctor notified', async () => {
+    // The first request is already APPROVED - create a fresh PENDING one to reject.
+    const createRes = await supertest(app)
+      .post('/permission-requests')
+      .set('Authorization', `Bearer ${doctorToken}`)
+      .send({
+        patientID:    PATIENT_ID,
+        resourceType: 'CONSULTATION',
+        resourceID:   'CONS_NOTIFY_002',
+        reason:       'Second clinical review',
+      });
+    const secondRequestID = createRes.body.requestID;
     notify.__clearCalls();
 
     const res = await supertest(app)
-      .patch(`/permission-requests/${REQUEST_ID}/reject`)
+      .patch(`/permission-requests/${secondRequestID}/reject`)
       .set('Authorization', `Bearer ${patientToken}`);
 
     expect(res.status).toBe(200);

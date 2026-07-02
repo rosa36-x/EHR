@@ -45,14 +45,20 @@ app.use("/audit-history",          auditHistoryRoutes);
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT ?? 5000;
-
 async function start() {
     await connectDB();
     registerShutdownHandlers();
-
     app.listen(PORT, () => {
         console.log(`MedVault backend running on port ${PORT}`);
     });
 }
 
-start();
+if (require.main === module) {
+    start();
+} else {
+    // Being required (e.g. by tests) - still need a live DB connection,
+    // just skip binding to a port.
+    connectDB();
+}
+
+module.exports = app;

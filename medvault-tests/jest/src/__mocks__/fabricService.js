@@ -1,173 +1,133 @@
 /**
  * __mocks__/fabricService.js
  *
- * Stubs every fabricService function used by unit tests.
- * Integration tests bypass this mock and hit the real network.
+ * fabricService.js in the real backend exports ONE thing: getContract(orgName),
+ * which returns { gateway, client, contract } for talking to Hyperledger Fabric.
+ * Every *FabricService.js file, auditMiddleware.js, and routes/auditHistory.js
+ * call getContract() directly and then use contract.submitTransaction(...) /
+ * contract.evaluateTransaction(...) with a chaincode function name as the
+ * first argument.
  *
- * Each function returns a minimal SUCCESS payload shaped to match
- * what the real chaincode returns, so route handlers work correctly.
+ * This mock fakes that same shape — NOT the domain functions built on top of
+ * it — so real business logic (sensitivity checks, permission gating, audit
+ * triggering) keeps running for real in tests; only the actual ledger call is
+ * stubbed.
  *
- * Call jest.mock('../../services/fabricService') in any unit test
- * that should not touch the Fabric network.
+ * Default responses below are generic "just succeed" placeholders. Override
+ * per test with:
+ *   fabricMock.__contract.evaluateTransaction.mockImplementationOnce(...)
+ *   fabricMock.__contract.submitTransaction.mockResolvedValueOnce(...)
  */
 
 'use strict';
 
-// ── helpers ────────────────────────────────────────────────────────────────────
-let _seq = 1;
-const nextID = (prefix) => `${prefix}${String(_seq++).padStart(4, '0')}`;
+function defaultEvaluate(fnName, ...args) {
+  switch (fnName) {
+    case 'CheckActiveTreatmentRelationship':
+    case 'CheckActivePermission':
+    case 'CheckConsent':
+      return Buffer.from('true');
 
-const SUCCESS = (extra = {}) => ({ status: 'SUCCESS', ...extra });
+    case 'GetConsultation':
+      return Buffer.from(JSON.stringify({
+        consultationID:   args[0],
+        patientID:        'PAT0001',
+        doctorID:         'DOC0001',
+        diagnosis:        'Mock diagnosis',
+        recordType:       'GENERAL',
+        sensitivityLevel: 'NORMAL',
+        consultationCID:  'bafymock-default-cid',
+        consultationHash: 'mockhash',
+        encryptionKeyRef: 'KEY_DEFAULT_0001',
+        createdAt:        new Date().toISOString(),
+        updatedAt:        new Date().toISOString(),
+      }));
 
-// ── patient ────────────────────────────────────────────────────────────────────
-const createPatient = jest.fn(async (data) =>
-  SUCCESS({
-    patientID:    nextID('PAT'),
-    aadhaarVID:   'VID-MOCK-0001',
-    aadhaarToken: 'TOK-MOCK-0001',
-    ...data,
-  })
-);
-const getPatient = jest.fn(async (patientID) =>
-  SUCCESS({ data: { patientID, fullName: 'Mock Patient', status: 'ACTIVE' } })
-);
+    case 'GetPrescription':
+      return Buffer.from(JSON.stringify({
+        prescriptionID: args[0], patientID: 'PAT0001', doctorID: 'DOC0001',
+        sensitivityLevel: 'NORMAL', prescriptionCID: 'bafymock-default-cid',
+        encryptionKeyRef: 'KEY_DEFAULT_0001', status: 'ISSUED',
+      }));
 
-// ── consultation ───────────────────────────────────────────────────────────────
-const createConsultation = jest.fn(async (data) =>
-  SUCCESS({
-    consultationID:  data.consultationID || nextID('CONS'),
-    consultationCID: 'bafymock-consultation-cid',
-    encryptionKeyRef: nextID('KEY'),
-    sensitivityLevel: 'NORMAL',
-  })
-);
-const getConsultation = jest.fn(async (consultationID, actorID, actorRole) =>
-  SUCCESS({
-    data: {
-      consultationID,
-      patientID:       'PAT0001',
-      sensitivityLevel: 'NORMAL',
-      consultationCID:  'bafymock-consultation-cid',
-      encryptionKeyRef: 'KEY0001',
-    },
-  })
-);
-const updateConsultation = jest.fn(async (consultationID, data) =>
-  SUCCESS({
-    consultationID,
-    consultationCID:  'bafymock-updated-cid',
-    encryptionKeyRef: nextID('KEY'),
-  })
-);
+    case 'GetLabReport':
+      return Buffer.from(JSON.stringify({
+        reportID: args[0], patientID: 'PAT0001', labTechID: 'DOC0001',
+        sensitivityLevel: 'NORMAL', reportCID: 'bafymock-default-cid',
+        encryptionKeyRef: 'KEY_DEFAULT_0001', status: 'COMPLETED',
+      }));
 
-// ── prescription ───────────────────────────────────────────────────────────────
-const createPrescription = jest.fn(async (data) =>
-  SUCCESS({
-    prescriptionID:   data.prescriptionID || nextID('PRE'),
-    prescriptionCID:  'bafymock-prescription-cid',
-    encryptionKeyRef: nextID('KEY'),
-    sensitivityLevel: 'NORMAL',
-  })
-);
-const getPrescription   = jest.fn(async (id) => SUCCESS({ data: { prescriptionID: id, status: 'ISSUED' } }));
-const updatePrescStatus = jest.fn(async ()   => SUCCESS());
+    case 'GetReferral':
+      return Buffer.from(JSON.stringify({
+        referralID: args[0], patientID: 'PAT0001', fromDoctorID: 'DOC0001',
+        toDoctorID: 'DOC0002', sensitivityLevel: 'NORMAL',
+        referralCID: 'bafymock-default-cid', encryptionKeyRef: 'KEY_DEFAULT_0001',
+      }));
 
-// ── lab report ─────────────────────────────────────────────────────────────────
-const createLabReport = jest.fn(async (data) =>
-  SUCCESS({
-    reportID:         data.reportID || nextID('LAB'),
-    reportCID:        'bafymock-labreport-cid',
-    encryptionKeyRef: nextID('KEY'),
-    sensitivityLevel: 'NORMAL',
-  })
-);
-const getLabReport = jest.fn(async (id) => SUCCESS({ data: { reportID: id, reportType: 'BLOOD_TEST' } }));
+    case 'GetConsent':
+      return Buffer.from(JSON.stringify({
+        consentID: args[0], patientID: 'PAT0001', granteeOrg: 'ResearchOrg',
+        resourceType: 'CONSULTATION', status: 'ACTIVE',
+      }));
 
-// ── referral ───────────────────────────────────────────────────────────────────
-const createReferral = jest.fn(async (data) =>
-  SUCCESS({ referralID: data.referralID || nextID('REF'), referralCID: 'bafymock-referral-cid' })
-);
-const getReferral = jest.fn(async (id) => SUCCESS({ data: { referralID: id } }));
+    case 'GetPermissionRequest':
+      return Buffer.from(JSON.stringify({
+        requestID: args[0], status: 'PENDING', doctorID: 'DOC0001',
+        patientID: 'PAT0001', resourceType: 'CONSULTATION', resourceID: 'CONS0001',
+      }));
 
-// ── consent ────────────────────────────────────────────────────────────────────
-const grantConsent  = jest.fn(async (data) => SUCCESS({ consentID: data.consentID || nextID('CON') }));
-const checkConsent  = jest.fn(async ()      => SUCCESS({ isActive: true }));
-const revokeConsent = jest.fn(async ()      => SUCCESS());
+    case 'GetTreatmentRelationship':
+      return Buffer.from(JSON.stringify({
+        relationshipID: args[0], status: 'ACTIVE', doctorID: 'DOC0001', patientID: 'PAT0001',
+      }));
 
-// ── treatment relationship ─────────────────────────────────────────────────────
-const createTreatmentRelationship  = jest.fn(async () => SUCCESS({ relationshipID: nextID('TR') }));
-const getTreatmentRelationship     = jest.fn(async (id) =>
-  SUCCESS({ data: { relationshipID: id, status: 'ACTIVE' } })
-);
-const markDormant   = jest.fn(async () => SUCCESS());
-const reactivate    = jest.fn(async () => SUCCESS());
+    case 'GetEmergencyAccess':
+      return Buffer.from(JSON.stringify({
+        emergencyAccessID: args[0], patientID: 'PAT0001', doctorID: 'DOC0001',
+        reason: 'Mock emergency', status: 'ACTIVE',
+      }));
 
-// ── permission request ─────────────────────────────────────────────────────────
-const createPermissionRequest  = jest.fn(async () =>
-  SUCCESS({
-    requestID:  nextID('PREQ'),
-    expiresAt:  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-  })
-);
-const getPermissionRequest     = jest.fn(async (id) =>
-  SUCCESS({ data: { requestID: id, status: 'PENDING' } })
-);
-const approvePermissionRequest = jest.fn(async () =>
-  SUCCESS({ accessExpires: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() })
-);
-const rejectPermissionRequest  = jest.fn(async () => SUCCESS());
+    case 'GetAuditLog':
+      return Buffer.from(JSON.stringify({
+        auditID: args[0], actorID: 'DOC0001', actorRole: 'doctor', action: 'READ',
+        resourceType: 'CONSULTATION', resourceID: 'PAT0001', timestamp: new Date().toISOString(),
+      }));
 
-// ── emergency access ───────────────────────────────────────────────────────────
-const createEmergencyAccess = jest.fn(async () =>
-  SUCCESS({ emergencyAccessID: nextID('EA') })
-);
-const getEmergencyAccess    = jest.fn(async (id) =>
-  SUCCESS({ data: { emergencyAccessID: id, status: 'ACTIVE' } })
-);
+    case 'GetPatient':
+      return Buffer.from(JSON.stringify({
+        patientID: args[0], fullName: 'Mock Patient', status: 'ACTIVE',
+      }));
 
-// ── audit ──────────────────────────────────────────────────────────────────────
-const createAuditLog = jest.fn(async () => SUCCESS({ auditID: nextID('AUD') }));
-const getAuditLog    = jest.fn(async (id) =>
-  SUCCESS({
-    data: {
-      auditID:      id,
-      actorID:      'DOC0001',
-      actorRole:    'doctor',
-      action:       'READ',
-      resourceType: 'CONSULTATION',
-      resourceID:   'CONS0001',
-      timestamp:    new Date().toISOString(),
-    },
-  })
-);
+    default:
+      return Buffer.from('{}');
+  }
+}
 
-/** Reset all mock call counts between tests. */
+const contract = {
+  submitTransaction:   jest.fn(async () => Buffer.from('')),
+  evaluateTransaction: jest.fn(async (fnName, ...args) => defaultEvaluate(fnName, ...args)),
+};
+
+const gateway = { close: jest.fn(async () => {}) };
+const client  = { close: jest.fn(() => {}) };
+
+const getContract = jest.fn(async (_orgName = 'hospital') => ({ gateway, client, contract }));
+
+/** Reset call history and restore default dispatcher behavior between tests. */
 const __resetAll = () => {
-  [
-    createPatient, getPatient,
-    createConsultation, getConsultation, updateConsultation,
-    createPrescription, getPrescription, updatePrescStatus,
-    createLabReport, getLabReport,
-    createReferral, getReferral,
-    grantConsent, checkConsent, revokeConsent,
-    createTreatmentRelationship, getTreatmentRelationship, markDormant, reactivate,
-    createPermissionRequest, getPermissionRequest, approvePermissionRequest, rejectPermissionRequest,
-    createEmergencyAccess, getEmergencyAccess,
-    createAuditLog, getAuditLog,
-  ].forEach((fn) => fn.mockClear());
-  _seq = 1;
+  getContract.mockClear();
+  gateway.close.mockClear();
+  client.close.mockClear();
+  contract.submitTransaction.mockReset();
+  contract.submitTransaction.mockImplementation(async () => Buffer.from(''));
+  contract.evaluateTransaction.mockReset();
+  contract.evaluateTransaction.mockImplementation(async (fnName, ...args) => defaultEvaluate(fnName, ...args));
 };
 
 module.exports = {
-  createPatient, getPatient,
-  createConsultation, getConsultation, updateConsultation,
-  createPrescription, getPrescription, updatePrescStatus,
-  createLabReport, getLabReport,
-  createReferral, getReferral,
-  grantConsent, checkConsent, revokeConsent,
-  createTreatmentRelationship, getTreatmentRelationship, markDormant, reactivate,
-  createPermissionRequest, getPermissionRequest, approvePermissionRequest, rejectPermissionRequest,
-  createEmergencyAccess, getEmergencyAccess,
-  createAuditLog, getAuditLog,
+  getContract,
+  __contract: contract,
+  __gateway:  gateway,
+  __client:   client,
   __resetAll,
 };

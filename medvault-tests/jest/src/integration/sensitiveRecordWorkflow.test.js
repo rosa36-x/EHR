@@ -3,28 +3,42 @@
  *
  * End-to-end workflow:
  *   1. Doctor creates a SENSITIVE consultation (PSYCHIATRY)
- *   2. Doctor tries to read it → ACCESS_DENIED
+ *   2. Doctor tries to read it -> ACCESS_DENIED
  *   3. Doctor creates a permission request
  *   4. Patient approves the request
- *   5. Doctor reads it → SUCCESS, accessExpires in ~48h
+ *   5. Doctor reads it -> SUCCESS, accessExpires in ~48h
  *   6. Patient views audit history for the record (BUG-02 regression)
- *   7. Permission request approve called again → FAILED (idempotency)
+ *   7. Permission request approve called again -> FAILED (idempotency)
  *
- * Mocked:  fabricService, ipfsService, kmsService, notificationService
- * Real:    Express routes, authMiddleware, sensitivityService, auditMiddleware
+ * This test controls the workflow directly via domain-level mocks of
+ * consultationFabricService and permissionRequestFabricService, rather than
+ * exercising the real sensitivity/permission-check logic inside them - that
+ * real logic is covered separately in auditMiddleware.test.js. The one
+ * exception is Step 6 (/audit-history/:id), which bypasses both domain
+ * services and calls fabricService.getContract directly in the real route,
+ * so it needs the low-level fabricService mock instead.
+ *
+ * Mocked:  fabricService (low-level), consultationFabricService,
+ *          permissionRequestFabricService, ipfsService, kmsService,
+ *          notificationService
+ * Real:    Express routes, authMiddleware
  */
 
 'use strict';
 
-jest.mock('../../../../backend/services/fabricService',      () => require('../__mocks__/fabricService'));
-jest.mock('../../../../backend/services/ipfsService',        () => require('../__mocks__/ipfsService'));
-jest.mock('../../../../backend/services/kmsService',         () => require('../__mocks__/kmsService'));
-jest.mock('../../../../backend/services/notificationService',() => require('../__mocks__/notificationService'));
+jest.mock('../../../../backend/services/fabricService',                  () => require('../__mocks__/fabricService'));
+jest.mock('../../../../backend/services/consultationFabricService',      () => require('../__mocks__/consultationFabricService'));
+jest.mock('../../../../backend/services/permissionRequestFabricService', () => require('../__mocks__/permissionRequestFabricService'));
+jest.mock('../../../../backend/services/ipfsService',                    () => require('../__mocks__/ipfsService'));
+jest.mock('../../../../backend/services/kmsService',                     () => require('../__mocks__/kmsService'));
+jest.mock('../../../../backend/services/notificationService',            () => require('../__mocks__/notificationService'));
 
-const supertest = require('supertest');
-const app       = require('../../../../backend/server');
-const { makeToken } = require('../helpers');
-const fabricMock    = require('../../../../backend/services/fabricService');
+const supertest      = require('supertest');
+const app            = require('../../../../backend/server');
+const { makeToken }  = require('../helpers');
+const fabricMock      = require('../../../../backend/services/fabricService');
+const consultationMock = require('../../../../backend/services/consultationFabricService');
+const permissionMock   = require('../../../../backend/services/permissionRequestFabricService');
 
 process.env.MONGODB_URI = process.env.MONGODB_URI_TEST || 'mongodb://localhost:27017/medvault_test';
 
@@ -37,47 +51,36 @@ const CONS_ID = 'CONS_SENSITIVE_WF_001';
 
 let permissionRequestID;
 
-// ── seed fabricMock responses for this workflow ────────────────────────────────
+// -- seed mock responses for this workflow --------------------------------------
 beforeAll(() => {
-  // getConsultation: return ACCESS_DENIED until permission granted
   let permissionGranted = false;
+  let approved = false;
 
-  fabricMock.getConsultation.mockImplementation(async (id, actorID, actorRole) => {
-    if (id === CONS_ID) {
-      if (!permissionGranted && actorRole === 'doctor') {
-        return {
-          status:           'ACCESS_DENIED',
-          requiresPermission: true,
-          resourceID:       id,
-          message:          'Record is SENSITIVE. Explicit patient permission required.',
-        };
-      }
+  consultationMock.getConsultation.mockImplementation(async (id, actorID, actorRole) => {
+    if (id !== CONS_ID) {
+      return { status: 'FAILED', message: 'Not found' };
+    }
+    if (!permissionGranted && actorRole === 'doctor') {
       return {
-        status: 'SUCCESS',
-        data: {
-          consultationID:   id,
-          patientID:        PATIENT_ID,
-          sensitivityLevel: 'SENSITIVE',
-          consultationCID:  'bafymock-sensitive-cid',
-          encryptionKeyRef: 'KEY_SENSITIVE_001',
-        },
+        status:             'ACCESS_DENIED',
+        requiresPermission: true,
+        resourceID:         id,
+        message:            'Record is SENSITIVE. Explicit patient permission required.',
       };
     }
-    return { status: 'FAILED', message: 'Not found' };
-  });
-
-  fabricMock.approvePermissionRequest.mockImplementation(async (requestID) => {
-    permissionGranted = true;
     return {
-      status:        'SUCCESS',
-      accessExpires: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+      status: 'SUCCESS',
+      data: {
+        consultationID:   id,
+        patientID:        PATIENT_ID,
+        sensitivityLevel: 'SENSITIVE',
+        consultationCID:  'bafymock-sensitive-cid',
+        encryptionKeyRef: 'KEY_SENSITIVE_001',
+      },
     };
   });
 
-  // Track double-approve
-  let approved = false;
-  const realApprove = fabricMock.approvePermissionRequest.getMockImplementation();
-  fabricMock.approvePermissionRequest.mockImplementation(async (requestID) => {
+  permissionMock.approvePermissionRequest.mockImplementation(async () => {
     if (approved) {
       return { status: 'FAILED', message: 'Request is not in PENDING status.' };
     }
@@ -89,41 +92,45 @@ beforeAll(() => {
     };
   });
 
-  fabricMock.createPermissionRequest.mockResolvedValue({
+  permissionMock.createPermissionRequest.mockResolvedValue({
     status:    'SUCCESS',
     requestID: 'PREQ_WF_001',
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   });
 
-  fabricMock.getPermissionRequest.mockResolvedValue({
+  permissionMock.getPermissionRequest.mockResolvedValue({
     status: 'SUCCESS',
     data: {
-      requestID:    'PREQ_WF_001',
-      doctorID:     DOCTOR_ID,
-      patientID:    PATIENT_ID,
-      resourceID:   CONS_ID,
-      status:       'PENDING',
+      requestID:  'PREQ_WF_001',
+      doctorID:   DOCTOR_ID,
+      patientID:  PATIENT_ID,
+      resourceID: CONS_ID,
+      status:     'PENDING',
     },
   });
 
-  fabricMock.getAuditLog.mockImplementation(async (id) => ({
-    status: 'SUCCESS',
-    data: {
-      auditID:      id,
-      actorID:      DOCTOR_ID,
-      actorRole:    'doctor',
-      action:       'READ',
-      resourceType: 'CONSULTATION',
-      resourceID:   PATIENT_ID, // resourceID = patientID for auto-generated audit logs
-      timestamp:    new Date().toISOString(),
-    },
-  }));
+  // /audit-history/:id bypasses both domain services above and calls
+  // fabricService.getContract directly in the real route - handle it here.
+  fabricMock.__contract.evaluateTransaction.mockImplementation(async (fnName, auditID) => {
+    if (fnName === 'GetAuditLog') {
+      return Buffer.from(JSON.stringify({
+        auditID,
+        actorID:      DOCTOR_ID,
+        actorRole:    'doctor',
+        action:       'READ',
+        resourceType: 'CONSULTATION',
+        resourceID:   PATIENT_ID, // resourceID = patientID for auto-generated audit logs
+        timestamp:    new Date().toISOString(),
+      }));
+    }
+    return Buffer.from('{}');
+  });
 });
 
-// ── Step 1: Create sensitive consultation ──────────────────────────────────────
+// -- Step 1: Create sensitive consultation --------------------------------------
 describe('Step 1: Doctor creates SENSITIVE consultation', () => {
-  test('POST /consultations with PSYCHIATRY → 200, sensitivityLevel SENSITIVE', async () => {
-    fabricMock.createConsultation.mockResolvedValueOnce({
+  test('POST /consultations with PSYCHIATRY -> 200, sensitivityLevel SENSITIVE', async () => {
+    consultationMock.createConsultation.mockResolvedValueOnce({
       status:           'SUCCESS',
       consultationID:   CONS_ID,
       consultationCID:  'bafymock-sensitive-cid',
@@ -147,9 +154,9 @@ describe('Step 1: Doctor creates SENSITIVE consultation', () => {
   });
 });
 
-// ── Step 2: Doctor reads — ACCESS_DENIED ──────────────────────────────────────
-describe('Step 2: Doctor reads sensitive record — denied', () => {
-  test('GET /consultations/:id → ACCESS_DENIED (no permission yet)', async () => {
+// -- Step 2: Doctor reads - ACCESS_DENIED ---------------------------------------
+describe('Step 2: Doctor reads sensitive record - denied', () => {
+  test('GET /consultations/:id -> ACCESS_DENIED (no permission yet)', async () => {
     const res = await supertest(app)
       .get(`/consultations/${CONS_ID}`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -160,9 +167,9 @@ describe('Step 2: Doctor reads sensitive record — denied', () => {
   });
 });
 
-// ── Step 3: Doctor creates permission request ──────────────────────────────────
+// -- Step 3: Doctor creates permission request ----------------------------------
 describe('Step 3: Doctor creates permission request', () => {
-  test('POST /permission-requests → 200, requestID returned', async () => {
+  test('POST /permission-requests -> 200, requestID returned', async () => {
     const res = await supertest(app)
       .post('/permission-requests')
       .set('Authorization', `Bearer ${doctorToken}`)
@@ -185,9 +192,9 @@ describe('Step 3: Doctor creates permission request', () => {
   });
 });
 
-// ── Step 4: Patient approves ───────────────────────────────────────────────────
+// -- Step 4: Patient approves -----------------------------------------------------
 describe('Step 4: Patient approves permission request', () => {
-  test('PATCH /permission-requests/:id/approve with patient token → 200', async () => {
+  test('PATCH /permission-requests/:id/approve with patient token -> 200', async () => {
     const res = await supertest(app)
       .patch(`/permission-requests/${permissionRequestID}/approve`)
       .set('Authorization', `Bearer ${patientToken}`);
@@ -200,7 +207,7 @@ describe('Step 4: Patient approves permission request', () => {
     expect(diffHours).toBeLessThan(49);
   });
 
-  test('doctor token on /approve → 403 (role guard)', async () => {
+  test('doctor token on /approve -> 403 (role guard)', async () => {
     const res = await supertest(app)
       .patch(`/permission-requests/${permissionRequestID}/approve`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -210,9 +217,9 @@ describe('Step 4: Patient approves permission request', () => {
   });
 });
 
-// ── Step 5: Doctor reads successfully after approval ──────────────────────────
-describe('Step 5: Doctor reads sensitive record — granted', () => {
-  test('GET /consultations/:id after approval → 200, SENSITIVE data returned', async () => {
+// -- Step 5: Doctor reads successfully after approval ----------------------------
+describe('Step 5: Doctor reads sensitive record - granted', () => {
+  test('GET /consultations/:id after approval -> 200, SENSITIVE data returned', async () => {
     const res = await supertest(app)
       .get(`/consultations/${CONS_ID}`)
       .set('Authorization', `Bearer ${doctorToken}`);
@@ -223,7 +230,7 @@ describe('Step 5: Doctor reads sensitive record — granted', () => {
   });
 });
 
-// ── Step 6: BUG-02 regression — patient views audit history for own record ────
+// -- Step 6: BUG-02 regression - patient views audit history for own record -----
 describe('Step 6: Patient views audit history (BUG-02 regression)', () => {
   test('patient can view audit log where resourceID matches their patientID', async () => {
     // The audit log was auto-generated when doctor read the record.
@@ -240,9 +247,9 @@ describe('Step 6: Patient views audit history (BUG-02 regression)', () => {
   });
 });
 
-// ── Step 7: Double-approve idempotency ────────────────────────────────────────
+// -- Step 7: Double-approve idempotency ------------------------------------------
 describe('Step 7: Double-approve is rejected', () => {
-  test('PATCH /approve on already-approved request → FAILED', async () => {
+  test('PATCH /approve on already-approved request -> FAILED', async () => {
     const res = await supertest(app)
       .patch(`/permission-requests/${permissionRequestID}/approve`)
       .set('Authorization', `Bearer ${patientToken}`);
