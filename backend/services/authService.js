@@ -11,6 +11,9 @@ const PATIENT_JWT_EXP = "24h";
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function generateOTP() {
+    if (process.env.NODE_ENV === "test") {
+        return "123456";
+    }
     return Math.floor(100000 + Math.random() * 900000).toString();
 }
 

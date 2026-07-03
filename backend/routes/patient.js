@@ -75,7 +75,6 @@ router.post("/complete-registration", async (req, res) => {
     const fabricResult =
         await patientFabricService.createPatient({
 
-            patientID,
             fullName,
             dob,
             gender,
