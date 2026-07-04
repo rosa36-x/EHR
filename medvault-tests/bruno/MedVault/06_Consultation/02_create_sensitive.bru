@@ -3,28 +3,33 @@ meta {
   type: http
   seq: 2
 }
-
 post {
   url: {{base_url}}/consultations
-  body: multipart-form
-  auth: bearer
+  body: multipartForm
+  auth: none
 }
+script:pre-request {
+  const fs = require('fs');
+  const FormData = require('form-data');
 
-auth:bearer {
-  token: {{doctor_token}}
+  bru.setVar("consultation_id_sensitive", "CONS" + Date.now());
+
+  const data = new FormData();
+  data.append("consultationID", bru.getVar("consultation_id_sensitive"));
+  data.append("patientID", bru.getEnvVar("patient_id"));
+  data.append("doctorID", bru.getEnvVar("doctor_id"));
+  data.append("diagnosis", "Generalised Anxiety Disorder — initial assessment");
+  data.append("recordType", "PSYCHIATRY");
+  data.append("file", fs.createReadStream("/tmp/test_consultation.pdf"));
+
+  req.setBody(data);
+  const headers = data.getHeaders();
+  headers["Authorization"] = "Bearer " + bru.getEnvVar("doctor_token");
+  req.setHeaders(headers);
 }
-
-body:multipart-form {
-  consultationID: CONS0002
-  patientID: {{patient_id}}
-  doctorID: {{doctor_id}}
-  diagnosis: Generalised Anxiety Disorder — initial assessment
-  recordType: PSYCHIATRY
-  file: @file(/tmp/test_consultation.pdf)
-}
-
 tests {
-  // PSYCHIATRY is a SENSITIVE type — sensitivity gate will be applied on reads.
+  console.log("RESPONSE STATUS:", res.status);
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

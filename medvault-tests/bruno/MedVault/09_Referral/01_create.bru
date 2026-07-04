@@ -19,7 +19,7 @@ script:pre-request {
   data.append("patientID", bru.getEnvVar("patient_id"));
   data.append("fromDoctorID", bru.getEnvVar("doctor_id"));
   data.append("toDoctorID", "DOC0002");
-  data.append("referralReason", "GENERAL");
+  data.append("referralType", "GENERAL");
   data.append("file", fs.createReadStream("/tmp/test_referral.pdf"));
 
   req.setBody(data);
