@@ -1,0 +1,17 @@
+script:pre-request {
+  const rand5 = Math.floor(10000 + Math.random() * 90000);
+  const rand8 = Math.floor(10000000 + Math.random() * 90000000);
+  
+  if (!bru.getVar("doctor_phone")) {
+    bru.setVar("doctor_phone", "90" + rand8);
+    console.log("GENERATED doctor_phone:", bru.getVar("doctor_phone"));
+  }
+  if (!bru.getVar("doctor_email")) {
+    bru.setVar("doctor_email", "doctor" + rand5 + "@hospital.test");
+    console.log("GENERATED doctor_email:", bru.getVar("doctor_email"));
+  }
+  if (!bru.getVar("license_number")) {
+    bru.setVar("license_number", "NMC" + rand5);
+    console.log("GENERATED license_number:", bru.getVar("license_number"));
+  }
+}
