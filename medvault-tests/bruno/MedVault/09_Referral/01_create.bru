@@ -19,6 +19,7 @@ script:pre-request {
   data.append("patientID", bru.getEnvVar("patient_id"));
   data.append("fromDoctorID", bru.getEnvVar("doctor_id"));
   data.append("toDoctorID", "DOC0002");
+  data.append("referralReason", "GENERAL");
   data.append("referralType", "GENERAL");
   data.append("file", fs.createReadStream("/tmp/test_referral.pdf"));
 
@@ -28,8 +29,6 @@ script:pre-request {
 tests {
   console.log("RESPONSE STATUS:", res.status);
   console.log("RESPONSE BODY:", JSON.stringify(res.body));
-  // NOTE: referral route has no authentication middleware — intentional
-  // (may be a route-level issue to review during testing).
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

@@ -3,18 +3,18 @@ meta {
   type: http
   seq: 4
 }
-
 get {
   url: {{base_url}}/consultations/{{consultation_id}}/document
   body: none
   auth: bearer
 }
-
 auth:bearer {
   token: {{doctor_token}}
 }
-
 tests {
+  console.log("REQUEST consultation_id:", bru.getEnvVar("consultation_id"));
+  console.log("RESPONSE STATUS:", res.status);
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

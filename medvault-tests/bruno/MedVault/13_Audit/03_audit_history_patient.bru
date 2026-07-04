@@ -39,7 +39,7 @@ tests {
   test("if 403 — FAILED status with meaningful message", function() {
     if (res.status === 403) {
       expect(res.body.status).to.equal("FAILED");
-      expect(res.body.message).to.include("access denied").or.include("Access denied");
+      expect(res.body.message).to.match(/access denied/i);
     }
   });
 }
