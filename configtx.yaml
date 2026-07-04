@@ -112,6 +112,9 @@ Organizations:
       Endorsement:
         Type: Signature
         Rule: "OR('PharmacyMSP.peer')"
+    AnchorPeers:
+      Host: peer0.pharmacy.medvault.com
+      Port: 10051
 
   - &Research
     Name: ResearchMSP
@@ -130,6 +133,9 @@ Organizations:
       Endorsement:
         Type: Signature
         Rule: "OR('ResearchMSP.peer')"
+    AnchorPeers:
+      Host: peer0.research.medvault.com
+      Port: 11051
 
 ################################################################################
 # CAPABILITIES

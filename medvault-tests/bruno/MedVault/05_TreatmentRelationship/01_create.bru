@@ -23,6 +23,7 @@ body:json {
 }
 
 tests {
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });
