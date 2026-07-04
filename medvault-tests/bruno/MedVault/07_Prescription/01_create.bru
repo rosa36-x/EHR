@@ -3,26 +3,32 @@ meta {
   type: http
   seq: 1
 }
-
 post {
   url: {{base_url}}/prescriptions
-  body: multipart-form
-  auth: bearer
+  body: multipartForm
+  auth: none
 }
+script:pre-request {
+  const fs = require('fs');
+  const FormData = require('form-data');
 
-auth:bearer {
-  token: {{doctor_token}}
+  bru.setVar("prescription_id_new", "PRE" + Date.now());
+
+  const data = new FormData();
+  data.append("prescriptionID", bru.getVar("prescription_id_new"));
+  data.append("patientID", bru.getEnvVar("patient_id"));
+  data.append("doctorID", bru.getEnvVar("doctor_id"));
+  data.append("recordType", "GENERAL");
+  data.append("file", fs.createReadStream("/tmp/test_prescription.pdf"));
+
+  req.setBody(data);
+  const headers = data.getHeaders();
+  headers["Authorization"] = "Bearer " + bru.getEnvVar("doctor_token");
+  req.setHeaders(headers);
 }
-
-body:multipart-form {
-  prescriptionID: PRE0001
-  patientID: {{patient_id}}
-  doctorID: {{doctor_id}}
-  recordType: GENERAL
-  file: @file(/tmp/test_prescription.pdf)
-}
-
 tests {
+  console.log("RESPONSE STATUS:", res.status);
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

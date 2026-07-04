@@ -3,26 +3,32 @@ meta {
   type: http
   seq: 1
 }
-
 post {
   url: {{base_url}}/labreports
-  body: multipart-form
-  auth: bearer
+  body: multipartForm
+  auth: none
 }
+script:pre-request {
+  const fs = require('fs');
+  const FormData = require('form-data');
 
-auth:bearer {
-  token: {{doctor_token}}
+  bru.setVar("lab_report_id_new", "LAB" + Date.now());
+
+  const data = new FormData();
+  data.append("reportID", bru.getVar("lab_report_id_new"));
+  data.append("patientID", bru.getEnvVar("patient_id"));
+  data.append("labTechID", "LABTECH001");
+  data.append("reportType", "BLOOD_TEST");
+  data.append("file", fs.createReadStream("/tmp/test_labreport.pdf"));
+
+  req.setBody(data);
+  const headers = data.getHeaders();
+  headers["Authorization"] = "Bearer " + bru.getEnvVar("doctor_token");
+  req.setHeaders(headers);
 }
-
-body:multipart-form {
-  reportID: LAB0001
-  patientID: {{patient_id}}
-  labTechID: LABTECH001
-  reportType: BLOOD_TEST
-  file: @file(/tmp/test_labreport.pdf)
-}
-
 tests {
+  console.log("RESPONSE STATUS:", res.status);
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

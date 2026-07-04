@@ -3,23 +3,27 @@ meta {
   type: http
   seq: 6
 }
-
 put {
   url: {{base_url}}/consultations/{{consultation_id}}
-  body: multipart-form
-  auth: bearer
+  body: multipartForm
+  auth: none
 }
+script:pre-request {
+  const fs = require('fs');
+  const FormData = require('form-data');
 
-auth:bearer {
-  token: {{doctor_token}}
+  const data = new FormData();
+  data.append("diagnosis", "Routine checkup — follow-up recommended in 3 months");
+  data.append("file", fs.createReadStream("/tmp/test_consultation_updated.pdf"));
+
+  req.setBody(data);
+  const headers = data.getHeaders();
+  headers["Authorization"] = "Bearer " + bru.getEnvVar("doctor_token");
+  req.setHeaders(headers);
 }
-
-body:multipart-form {
-  diagnosis: Routine checkup — follow-up recommended in 3 months
-  file: @file(/tmp/test_consultation_updated.pdf)
-}
-
 tests {
+  console.log("RESPONSE STATUS:", res.status);
+  console.log("RESPONSE BODY:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });
