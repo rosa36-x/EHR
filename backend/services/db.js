@@ -78,8 +78,33 @@ const notificationSchema = new mongoose.Schema({
     createdAt:     { type: String },
 });
 
+/**
+ * Emergency Access Log — app-layer tracking for emergency access lifecycle.
+ *
+ * The Fabric ledger's EmergencyAccess record only supports Create/Get today
+ * (no status update), so this collection is the source of truth for whether
+ * an emergency access episode is still open, and for which
+ * TreatmentRelationship it granted (so it can be revoked on close).
+ *
+ * See docs/emergency-access-chaincode-todo.md for what would need to move
+ * on-chain if/when the chaincode gets an update function for this.
+ */
+const emergencyAccessLogSchema = new mongoose.Schema({
+    emergencyAccessID: { type: String, required: true, unique: true },
+    relationshipID:    { type: String, required: true },
+    doctorID:          { type: String, required: true },
+    patientID:         { type: String, required: true },
+    reason:             { type: String },
+    status:            { type: String, enum: ["ACTIVE", "CLOSED"], default: "ACTIVE" },
+    expiresAt:         { type: String, required: true }, // 24h safety-net ceiling
+    createdAt:         { type: String },
+    closedAt:          { type: String },
+    closedBy:          { type: String },
+});
+
 // ── Models ────────────────────────────────────────────────────────────────────
-export const Doctor       = mongoose.model("Doctor",      doctorSchema);
-export const PatientAuth  = mongoose.model("PatientAuth", patientAuthSchema);
-export const OTP          = mongoose.model("OTP",         otpSchema);
-export const Notification = mongoose.model("Notification", notificationSchema);
+export const Doctor             = mongoose.model("Doctor",             doctorSchema);
+export const PatientAuth        = mongoose.model("PatientAuth",        patientAuthSchema);
+export const OTP                = mongoose.model("OTP",                otpSchema);
+export const Notification       = mongoose.model("Notification",       notificationSchema);
+export const EmergencyAccessLog = mongoose.model("EmergencyAccessLog", emergencyAccessLogSchema);

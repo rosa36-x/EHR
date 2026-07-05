@@ -7,7 +7,11 @@ meta {
 get {
   url: {{base_url}}/patients/{{patient_id}}
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
 }
 
 tests {

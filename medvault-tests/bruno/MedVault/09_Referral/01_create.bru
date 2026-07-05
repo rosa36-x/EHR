@@ -6,7 +6,11 @@ meta {
 post {
   url: {{base_url}}/referrals
   body: multipartForm
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
 }
 script:pre-request {
   const fs = require('fs');
@@ -24,7 +28,10 @@ script:pre-request {
   data.append("file", fs.createReadStream("/tmp/test_referral.pdf"));
 
   req.setBody(data);
-  req.setHeaders(data.getHeaders());
+  req.setHeaders({
+    ...data.getHeaders(),
+    Authorization: `Bearer ${bru.getEnvVar("doctor_token")}`
+  });
 }
 tests {
   console.log("RESPONSE STATUS:", res.status);

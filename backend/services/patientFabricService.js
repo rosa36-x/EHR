@@ -2,6 +2,7 @@ import { getContract } from "./fabricService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { registerPatientAuth } from "./authService.js";
 import { generateID } from "./idService.js";
+import { canAccessRecord } from "./accessControlService.js";
 
 export async function createPatient(patientData) {
     let gateway, client;
@@ -59,6 +60,20 @@ export async function createPatient(patientData) {
 export async function getPatient(patientID, actorID, actorRole) {
     let gateway, client;
     try {
+        // Patient records have no sensitivityLevel concept (demographic data,
+        // not a clinical record type) — canAccessRecord's sensitivity branch
+        // is simply skipped when it's undefined, leaving self-access +
+        // treatment-relationship checks, which is exactly what applies here.
+        const access = await canAccessRecord({
+            actorID, actorRole,
+            patientID,
+            resourceID:   patientID,
+            resourceType: "PATIENT",
+        });
+        if (!access.allowed) {
+            return { status: access.status, message: access.message };
+        }
+
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;

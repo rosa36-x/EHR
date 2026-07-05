@@ -2,6 +2,7 @@ import express from "express";
 
 import * as uidaiService from "../services/uidaiService.js";
 import * as patientFabricService from "../services/patientFabricService.js";
+import { authenticate } from "../services/authMiddleware.js";
 
 const router = express.Router();
 
@@ -117,9 +118,9 @@ router.post("/complete-registration", async (req, res) => {
     });
 
 });
-router.get("/:id", async (req, res) => {
-    const result = await patientFabricService.getPatient(req.params.id);
-    res.json(result);
+router.get("/:id", authenticate, async (req, res) => {
+    const result = await patientFabricService.getPatient(req.params.id, req.user.id, req.user.role);
+    return res.status(result.status === "SUCCESS" ? 200 : 403).json(result);
 });
 
 export default router;

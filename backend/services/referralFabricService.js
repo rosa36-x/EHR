@@ -4,7 +4,7 @@ import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
-import { hasActivePermission } from "./permissionRequestFabricService.js";
+import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
 
@@ -98,12 +98,15 @@ export async function getReferral(referralID, actorID, actorRole) {
         const raw  = await contract.evaluateTransaction("GetReferral", referralID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
-        if (data.sensitivityLevel === "SENSITIVE") {
-            const hasPermission = await hasActivePermission(actorID, referralID);
-            if (!hasPermission) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "REFERRAL", resourceID: referralID });
-                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: referralID, resourceType: "REFERRAL" };
-            }
+        const access = await canAccessRecord({
+            actorID, actorRole,
+            patientID:        data.patientID,
+            resourceID:       referralID,
+            resourceType:     "REFERRAL",
+            sensitivityLevel: data.sensitivityLevel,
+        });
+        if (!access.allowed) {
+            return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "REFERRAL", resourceID: referralID });
@@ -126,16 +129,19 @@ export async function getReferralDocument(referralID, actorID, actorRole) {
         const { contract } = result;
 
         const raw = await contract.evaluateTransaction("GetReferral", referralID);
-        const { referralCID, encryptionKeyRef, sensitivityLevel } = JSON.parse(
+        const { referralCID, encryptionKeyRef, sensitivityLevel, patientID } = JSON.parse(
             Buffer.from(raw).toString("utf8")
         );
 
-        if (sensitivityLevel === "SENSITIVE") {
-            const hasPermission = await hasActivePermission(actorID, referralID);
-            if (!hasPermission) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "REFERRAL", resourceID: referralID });
-                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: referralID, resourceType: "REFERRAL" };
-            }
+        const access = await canAccessRecord({
+            actorID, actorRole,
+            patientID,
+            resourceID:       referralID,
+            resourceType:     "REFERRAL",
+            sensitivityLevel,
+        });
+        if (!access.allowed) {
+            return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
         const encryptedBuffer = await getFile(referralCID);

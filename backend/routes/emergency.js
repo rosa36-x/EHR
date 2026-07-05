@@ -1,5 +1,6 @@
 import express from "express";
 import * as svc from "../services/emergencyFabricService.js";
+import { authenticate, authorizeRoles } from "../services/authMiddleware.js";
 
 const router = express.Router();
 
@@ -8,7 +9,7 @@ const router = express.Router();
  * Body: { emergencyAccessID, patientID, doctorID, reason }
  * EmergencyAccessID format: EA0001
  */
-router.post("/", async (req, res) => {
+router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
     const { emergencyAccessID, patientID, doctorID, reason } = req.body;
 
     if (!emergencyAccessID || !patientID || !doctorID || !reason) {
@@ -18,16 +19,27 @@ router.post("/", async (req, res) => {
         });
     }
 
-    const result = await svc.createEmergencyAccess(req.body);
+    const result = await svc.createEmergencyAccess(req.body, req.user.id);
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
 
 /**
  * GET /emergency-access/:id
  */
-router.get("/:id", async (req, res) => {
-    const result = await svc.getEmergencyAccess(req.params.id);
+router.get("/:id", authenticate, async (req, res) => {
+    const result = await svc.getEmergencyAccess(req.params.id, req.user.id, req.user.role);
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
+
+/**
+ * PATCH /emergency-access/:id/close
+ * Explicitly ends an emergency access episode — revokes the doctor's access
+ * immediately rather than waiting on the 24-hour safety-net expiry.
+ */
+router.patch("/:id/close", authenticate, authorizeRoles("doctor"), async (req, res) => {
+    const result = await svc.closeEmergencyAccess(req.params.id, req.user.id, req.user.role);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 export default router;

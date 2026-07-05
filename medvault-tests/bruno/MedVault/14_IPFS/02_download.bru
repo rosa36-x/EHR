@@ -7,7 +7,11 @@ meta {
 get {
   url: {{base_url}}/ipfs/download/{{ipfs_test_cid}}
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
 }
 
 tests {

@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import * as svc from "../services/referralFabricService.js";
+import { authenticate } from "../services/authMiddleware.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -9,7 +10,7 @@ const upload = multer({ storage: multer.memoryStorage() });
  * POST /referrals
  * Multipart form: file (PDF) + fields (referralID, patientID, fromDoctorID, toDoctorID, referralReason)
  */
-router.post("/", upload.single("file"), async (req, res) => {
+router.post("/", authenticate, upload.single("file"), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ status: "FAILED", message: "Referral document (PDF) is required." });
     }
@@ -25,7 +26,8 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     const result = await svc.createReferral(
         { referralID, patientID, fromDoctorID, toDoctorID, referralReason },
-        req.file.buffer
+        req.file.buffer,
+        req.user.id
     );
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
@@ -35,8 +37,8 @@ router.post("/", upload.single("file"), async (req, res) => {
  * GET /referrals/:id
  * Returns referral metadata from Fabric.
  */
-router.get("/:id", async (req, res) => {
-    const result = await svc.getReferral(req.params.id);
+router.get("/:id", authenticate, async (req, res) => {
+    const result = await svc.getReferral(req.params.id, req.user.id, req.user.role);
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
 
@@ -44,8 +46,8 @@ router.get("/:id", async (req, res) => {
  * GET /referrals/:id/document
  * Returns decrypted referral document from IPFS.
  */
-router.get("/:id/document", async (req, res) => {
-    const result = await svc.getReferralDocument(req.params.id);
+router.get("/:id/document", authenticate, async (req, res) => {
+    const result = await svc.getReferralDocument(req.params.id, req.user.id, req.user.role);
 
     if (result.status !== "SUCCESS") {
         return res.status(500).json(result);

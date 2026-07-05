@@ -46,8 +46,10 @@ export async function createTreatmentRelationship(data) {
         const relationshipID = generateID("treatmentRelationship");
         const now            = new Date();
 
-        // Dormant threshold: 30 days from now
-        const dormantAfter = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        // Dormant threshold: defaults to 30 days, but callers (e.g. emergency
+        // access) can pass a shorter window via data.dormantAfterHours.
+        const dormantHours = data.dormantAfterHours ?? 30 * 24;
+        const dormantAfter = new Date(now.getTime() + dormantHours * 60 * 60 * 1000).toISOString();
         const timestamp    = now.toISOString();
 
         const result = await getContract("hospital");
@@ -68,7 +70,7 @@ export async function createTreatmentRelationship(data) {
             timestamp
         );
 
-        return { status: "SUCCESS", relationshipID };
+        return { status: "SUCCESS", relationshipID, dormantAfter };
     } catch (err) {
         console.error("[TreatmentRelationship] create failed:", err);
         return { status: "FAILED", message: err.message };

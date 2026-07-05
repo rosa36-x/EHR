@@ -7,7 +7,11 @@ meta {
 get {
   url: {{base_url}}/audits/{{audit_id}}
   body: none
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
 }
 
 tests {

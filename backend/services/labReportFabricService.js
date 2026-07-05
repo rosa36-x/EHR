@@ -4,8 +4,7 @@ import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
-import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
-import { hasActivePermission } from "./permissionRequestFabricService.js";
+import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth } from "./db.js";
 
@@ -99,18 +98,15 @@ export async function getLabReport(reportID, actorID, actorRole, orgName = "labo
         const raw  = await contract.evaluateTransaction("GetLabReport", reportID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
 
-        if (data.sensitivityLevel === "SENSITIVE") {
-            const hasPermission = await hasActivePermission(actorID, reportID);
-            if (!hasPermission) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
-                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: reportID, resourceType: "LAB_REPORT" };
-            }
-        } else {
-            const hasRelationship = await hasActiveTreatmentRelationship(actorID, data.patientID);
-            if (!hasRelationship) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
-                return { status: "ACCESS_DENIED", message: "No active treatment relationship with this patient." };
-            }
+        const access = await canAccessRecord({
+            actorID, actorRole,
+            patientID:        data.patientID,
+            resourceID:       reportID,
+            resourceType:     "LAB_REPORT",
+            sensitivityLevel: data.sensitivityLevel,
+        });
+        if (!access.allowed) {
+            return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID });
@@ -137,18 +133,15 @@ export async function getLabReportDocument(reportID, actorID, actorRole, orgName
             Buffer.from(raw).toString("utf8")
         );
 
-        if (sensitivityLevel === "SENSITIVE") {
-            const hasPermission = await hasActivePermission(actorID, reportID);
-            if (!hasPermission) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
-                return { status: "ACCESS_DENIED", message: "This is a sensitive record. Please request patient permission first.", requiresPermission: true, resourceID: reportID, resourceType: "LAB_REPORT" };
-            }
-        } else {
-            const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
-            if (!hasRelationship) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "LAB_REPORT", resourceID: reportID });
-                return { status: "ACCESS_DENIED", message: "No active treatment relationship with this patient." };
-            }
+        const access = await canAccessRecord({
+            actorID, actorRole,
+            patientID,
+            resourceID:       reportID,
+            resourceType:     "LAB_REPORT",
+            sensitivityLevel,
+        });
+        if (!access.allowed) {
+            return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
         const encryptedBuffer = await getFile(reportCID);

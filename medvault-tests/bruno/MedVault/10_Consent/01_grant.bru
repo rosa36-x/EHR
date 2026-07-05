@@ -7,7 +7,11 @@ meta {
 post {
   url: {{base_url}}/consents
   body: json
-  auth: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
 }
 
 body:json {

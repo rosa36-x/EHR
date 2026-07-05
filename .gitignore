@@ -106,3 +106,9 @@ pnpm-debug.log*
 
 medvault-tests/jest/package-lock.json
 medvault-tests/jest/package.json
+
+.medvault-fix-backup-*/
+medvault-tests/bruno/.bruno-header-fix-backup-*/
+apply-medvault-fixes.sh
+medvault-tests/bruno/MedVault/fix-bruno-auth.sh
+medvault-tests/bruno/MedVault/fix-multipart-auth-headers.sh

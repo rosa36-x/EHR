@@ -1,8 +1,16 @@
 import { getContract } from "./fabricService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { notify, NotificationEvents } from "./notificationService.js";
-import { PatientAuth, Doctor } from "./db.js";
+import { PatientAuth, Doctor, EmergencyAccessLog } from "./db.js";
 import { generateID } from "./idService.js";
+import { createTreatmentRelationship, dischargePatient } from "./treatmentRelationshipFabricService.js";
+
+// Safety-net ceiling: an emergency relationship auto-expires after this many
+// hours even if nobody explicitly closes it. Chosen as a fixed value here
+// because there's no per-hospital config yet — see the module docstring in
+// closeEmergencyAccess() for the explicit-close path, which is the one that
+// should normally end an emergency episode well before this fires.
+const EMERGENCY_ACCESS_SAFETY_NET_HOURS = 24;
 
 export async function createEmergencyAccess(data, actorID) {
     let gateway, client;
@@ -32,6 +40,51 @@ export async function createEmergencyAccess(data, actorID) {
             action:       "CREATE",
             resourceType: "EMERGENCY_ACCESS",
             resourceID:   data.patientID,
+        });
+
+        // Grant the doctor an ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship
+        // so this emergency access actually satisfies the normal
+        // hasActiveTreatmentRelationship() gate used by consultation/prescription/
+        // labreport/patient reads. Without this, emergency access is inert.
+        //
+        // dormantAfterHours caps this relationship at 24 hours instead of the
+        // default 30 days — CheckActiveTreatmentRelationship in chaincode
+        // already auto-expires relationships past their DormantAfter timestamp,
+        // so this alone is enough for the "forgotten emergency session" safety
+        // net, with no chaincode change required. Explicit closure (see
+        // closeEmergencyAccess below) is still the expected normal path and
+        // should usually happen well before this ceiling.
+        const relationshipResult = await createTreatmentRelationship({
+            patientID: data.patientID,
+            doctorID:  data.doctorID,
+            relationshipType: "ASSIGNED_EMERGENCY_PHYSICIAN",
+            notes: `Emergency access ${emergencyAccessID}: ${data.reason}`,
+            dormantAfterHours: EMERGENCY_ACCESS_SAFETY_NET_HOURS,
+        });
+
+        if (relationshipResult.status !== "SUCCESS") {
+            console.error(
+                "[EmergencyAccess] Failed to create backing treatment relationship:",
+                relationshipResult.message
+            );
+            return { status: "FAILED", message: "Failed to grant emergency access relationship." };
+        }
+
+        // Track the emergencyAccessID <-> relationshipID link and expiry so
+        // closeEmergencyAccess() knows what to revoke. The Fabric ledger's
+        // EmergencyAccess record has no status-update transaction today
+        // (only Create/Get — see chaincode/emergency_contract.go), so this
+        // Mongo-side log is the source of truth for "is this episode still
+        // open" until that chaincode function exists.
+        await EmergencyAccessLog.create({
+            emergencyAccessID,
+            relationshipID: relationshipResult.relationshipID,
+            doctorID:       data.doctorID,
+            patientID:      data.patientID,
+            reason:         data.reason,
+            status:         "ACTIVE",
+            expiresAt:      relationshipResult.dormantAfter,
+            createdAt:      timestamp,
         });
 
         // Notify patient of emergency access
@@ -76,5 +129,73 @@ export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) 
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();
+    }
+}
+
+/**
+ * Explicitly close an emergency access episode — the normal way an
+ * emergency should end, well before the 24-hour safety net in
+ * createEmergencyAccess() would otherwise expire it automatically.
+ *
+ * Revokes the doctor's actual access immediately by discharging the backing
+ * ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship (this is the part that
+ * matters for security — CheckActiveTreatmentRelationship will return false
+ * for it right away). The Fabric EmergencyAccess ledger record itself keeps
+ * saying ACTIVE, since there's no chaincode function to update its status
+ * yet — this Mongo log's `status` field is the source of truth for that
+ * until one exists.
+ *
+ * Only the doctor who opened the emergency access (or, in the future, some
+ * hospital-admin role) should be able to close it — enforced by the caller
+ * checking actorID against the stored doctorID before calling this.
+ */
+export async function closeEmergencyAccess(emergencyAccessID, actorID, actorRole) {
+    try {
+        const log = await EmergencyAccessLog.findOne({ emergencyAccessID });
+        if (!log) {
+            return { status: "FAILED", message: `No emergency access log found for ${emergencyAccessID}.` };
+        }
+
+        if (log.status === "CLOSED") {
+            return { status: "FAILED", message: "This emergency access has already been closed." };
+        }
+
+        if (actorRole === "doctor" && actorID !== log.doctorID) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
+            return { status: "ACCESS_DENIED", message: "Only the doctor who opened this emergency access can close it." };
+        }
+
+        const dischargeResult = await dischargePatient(log.relationshipID, log.doctorID);
+        if (dischargeResult.status !== "SUCCESS") {
+            console.error("[EmergencyAccess] Failed to discharge backing relationship on close:", dischargeResult.message);
+            return { status: "FAILED", message: "Failed to revoke the underlying access relationship." };
+        }
+
+        const closedAt = new Date().toISOString();
+        log.status   = "CLOSED";
+        log.closedAt = closedAt;
+        log.closedBy = actorID;
+        await log.save();
+
+        await logAudit({ actorID, actorRole, action: "UPDATE", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
+
+        // Notify patient that emergency access has ended
+        const patient = await PatientAuth.findOne({ patientID: log.patientID });
+        const doctor  = await Doctor.findOne({ doctorID: log.doctorID });
+        if (patient && doctor) {
+            await notify({
+                recipientID:   log.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "EMERGENCY_ACCESS_ENDED",
+                message:       `Emergency access to your records by Dr. ${doctor.fullName} has ended.`,
+                channel:       "sms",
+            });
+        }
+
+        return { status: "SUCCESS", emergencyAccessID, closedAt };
+    } catch (err) {
+        console.error("[EmergencyAccess] closeEmergencyAccess failed:", err);
+        return { status: "FAILED", message: err.message };
     }
 }
