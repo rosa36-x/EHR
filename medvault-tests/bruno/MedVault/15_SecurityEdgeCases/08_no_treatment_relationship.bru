@@ -17,11 +17,13 @@ script:pre-request {
       password: "TestPass123!",
       specialization: "General Medicine",
       hospitalID: "HOSP001",
-      licenseNumber: "NMC" + Date.now()
-    })
+      licenseNumber: "NMC" + Date.now().toString().slice(-8)    })
   });
   const regData = await regRes.json();
   console.log("REGISTER STATUS:", regRes.status, JSON.stringify(regData));
+  if (regRes.status !== 200) {
+    throw new Error("Pre-request setup failed: doctor registration returned " + regRes.status + " - " + JSON.stringify(regData));
+  }
   const loginRes = await fetch(bru.getEnvVar("base_url") + "/auth/doctor/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -29,6 +31,9 @@ script:pre-request {
   });
   const loginData = await loginRes.json();
   console.log("LOGIN STATUS:", loginRes.status, JSON.stringify(loginData));
+  if (loginRes.status !== 200 || !loginData.token) {
+    throw new Error("Pre-request setup failed: doctor login returned " + loginRes.status + " - " + JSON.stringify(loginData));
+  }
   bru.setVar("second_doctor_token", loginData.token);
 }
 
