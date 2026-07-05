@@ -112,3 +112,5 @@ medvault-tests/bruno/.bruno-header-fix-backup-*/
 apply-medvault-fixes.sh
 medvault-tests/bruno/MedVault/fix-bruno-auth.sh
 medvault-tests/bruno/MedVault/fix-multipart-auth-headers.sh
+apply-audit-fixes.sh 
+medvault-audit-fixes.patch
