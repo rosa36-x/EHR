@@ -104,9 +104,6 @@ pnpm-debug.log*
 *.swp
 *~
 
-medvault-tests/jest/package-lock.json
-medvault-tests/jest/package.json
-
 .medvault-fix-backup-*/
 medvault-tests/bruno/.bruno-header-fix-backup-*/
 apply-medvault-fixes.sh

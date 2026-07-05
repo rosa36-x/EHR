@@ -75,12 +75,3 @@ export async function getDoctorsByHospital(hospitalID) {
         return { status: "FAILED", message: err.message };
     }
 }
-
-/**
- * Mock NMC license validation.
- * Format check only — alphanumeric, 5-15 chars.
- * Replace with real NMC API call in production.
- */
-export function validateLicense(licenseNumber) {
-    return /^[A-Z0-9]{5,15}$/.test(licenseNumber);
-}

@@ -35,7 +35,8 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
 router.get("/:id", authenticate, async (req, res) => {
     const org = req.query.org ?? "laboratory";
     const result = await svc.getLabReport(req.params.id, req.user.id, req.user.role, org);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**

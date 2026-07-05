@@ -210,25 +210,35 @@ Verifies the OTP received from the UIDAI Mock Service and registers the patient 
 
 # Current Implementation Status
 
+*Last verified against source: July 2026.*
+
 | Component                      | Status             |
 | ------------------------------ | ------------------ |
-| UIDAI Demographic Verification | ✅ Completed        |
+| UIDAI Demographic Verification | ✅ Completed (mock) |
 | OTP Generation                 | ✅ Completed        |
 | OTP Verification               | ✅ Completed        |
 | OTP Expiration                 | ✅ Completed        |
-| Biometric Authentication       | ✅ Completed        |
+| Biometric Authentication       | ✅ Completed (mock) |
 | Patient Registration Backend   | ✅ Completed        |
-| Patient Fabric Service         | ✅ Mock Implemented |
-| Fabric Gateway Integration     | ⏳ Pending          |
-| Hyperledger Fabric Submission  | ⏳ Pending          |
+| Doctor Registration & Auth     | ✅ Completed        |
+| Fabric Gateway Integration     | ✅ Completed — live 5-org network (HospitalMSP, PharmacyMSP, LaboratoryMSP, GovernanceMSP, ResearchMSP not yet onboarded) |
+| Consultation / Prescription / LabReport / Referral chaincode writes | ✅ Completed |
+| Consent, Permission Request, Treatment Relationship, Emergency Access | ✅ Completed |
+| Audit Logging (on-chain)       | ✅ Completed        |
+| IPFS/Helia Encrypted Document Storage | ✅ Completed |
+| Research Org / AI Anomaly Detection Engine | ⏳ Not started |
+
+> Note: OTPs are persisted in the `OTP` MongoDB collection (`backend/services/db.js`), not "temporary server memory" as an earlier draft of this doc stated — they are still deleted immediately after successful verification and expire after 5 minutes.
+
+This document currently only covers the patient registration workflow in detail below. For the full endpoint list (doctors, consultations, prescriptions, lab reports, referrals, consent, permission requests, treatment relationships, emergency access, audit/audit-history), see the route files under `backend/routes/` or the Bruno collection under `medvault-tests/bruno/MedVault/`, which exercises every route. Expanding this doc to cover them is a TODO.
 
 ---
 
 # Future Enhancements
 
-* Integrate Patient Fabric Service with the Hyperledger Fabric Gateway.
-* Perform on-chain `CreatePatient` transaction.
+* Stand up the Research org and onboard it to the channel.
+* Build the AI anomaly detection engine (Isolation Forest + LSTM with SHAP) as a governed Fabric identity.
+* Add the consent-based cross-org access branch to `accessControlService.canAccessRecord` (see comments in that file for the two prerequisites).
 * Implement duplicate patient detection.
-* Add backend logging and audit trail generation.
-* Integrate with frontend registration portal.
+* Integrate with a frontend registration portal.
 

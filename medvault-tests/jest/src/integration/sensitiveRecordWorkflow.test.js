@@ -161,7 +161,7 @@ describe('Step 2: Doctor reads sensitive record - denied', () => {
       .get(`/consultations/${CONS_ID}`)
       .set('Authorization', `Bearer ${doctorToken}`);
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.status).toBe('ACCESS_DENIED');
     expect(res.body.requiresPermission).toBe(true);
   });

@@ -8,6 +8,13 @@ import path from "path";
  *
  * Format: <PREFIX><4-digit-number>
  * e.g. PAT0001, PRE0002, LAB0003
+ *
+ * Concurrency note: loadStore/saveStore use synchronous fs calls and
+ * generateID() is not async, so within a single Node process the event
+ * loop cannot interleave two calls — no read-modify-write race here.
+ * This is NOT safe across multiple processes/instances sharing the same
+ * id_store.json (e.g. a future PM2 cluster or multi-instance deployment)
+ * — that would need a real file lock or move the counter into MongoDB.
  */
 
 const ID_STORE_PATH = path.resolve("./data/id_store.json");

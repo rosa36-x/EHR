@@ -49,7 +49,7 @@ auth:bearer {
 
 tests {
   test("ACCESS_DENIED without treatment relationship", function() {
-    expect(res.status).to.equal(500);
+    expect(res.status).to.equal(403);
     expect(res.body.status).to.equal("ACCESS_DENIED");
   });
   test("error mentions treatment relationship", function() {

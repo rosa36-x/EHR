@@ -16,11 +16,10 @@ auth:bearer {
 
 tests {
   // Expected: ACCESS_DENIED because no permission request has been approved yet.
-  // The server returns 500 with status ACCESS_DENIED (service layer returns it
-  // as a non-exception result, which the route maps to 500).
+  // GET /consultations/:id now maps ACCESS_DENIED -> 403, consistent with
+  // GET /consultations/:id/document (see backend/routes/consultation.js).
   test("denied without permission", function() {
-    // Route maps ACCESS_DENIED → 500 (service-level result, not exception)
-    expect(res.status).to.equal(500);
+    expect(res.status).to.equal(403);
     expect(res.body.status).to.equal("ACCESS_DENIED");
   });
   test("requiresPermission flag set", function() {

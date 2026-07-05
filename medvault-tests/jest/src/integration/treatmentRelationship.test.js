@@ -122,7 +122,7 @@ describe('Treatment relationship lifecycle', () => {
       .get('/consultations/CONS_TR_TEST_001')
       .set('Authorization', `Bearer ${doctorToken}`);
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(403);
     expect(res.body.status).toBe('ACCESS_DENIED');
   });
 
