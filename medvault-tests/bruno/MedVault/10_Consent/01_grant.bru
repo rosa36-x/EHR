@@ -14,9 +14,13 @@ auth:bearer {
   token: {{patient_token}}
 }
 
+script:pre-request {
+  bru.setVar("consent_id_new", "CON" + Date.now());
+}
+
 body:json {
   {
-    "consentID": "CON0001",
+    "consentID": "{{consent_id_new}}",
     "patientID": "{{patient_id}}",
     "granteeOrg": "PharmacyMSP",
     "resourceType": "PRESCRIPTION",
@@ -26,6 +30,7 @@ body:json {
 }
 
 tests {
+  console.log("CONSENT RESPONSE:", JSON.stringify(res.body));
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

@@ -48,6 +48,7 @@ export async function grantConsent(data, actorID) {
 
         return { status: "SUCCESS", consentID: data.consentID };
     } catch (err) {
+        console.error("[grantConsent] error:", err.message, err.details ?? err.cause ?? "");
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();

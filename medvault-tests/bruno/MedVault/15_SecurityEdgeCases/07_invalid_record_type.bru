@@ -6,21 +6,24 @@ meta {
 
 post {
   url: {{base_url}}/consultations
-  body: multipart-form
-  auth: bearer
+  body: multipartForm
+  auth: none
 }
 
-auth:bearer {
-  token: {{doctor_token}}
-}
-
-body:multipart-form {
-  consultationID: CONS_INVALID_TYPE_TEST
-  patientID: {{patient_id}}
-  doctorID: {{doctor_id}}
-  diagnosis: Test diagnosis
-  recordType: NOT_A_REAL_TYPE
-  file: @file(/tmp/test_consultation.pdf)
+script:pre-request {
+  const fs = require('fs');
+  const FormData = require('form-data');
+  const data = new FormData();
+  data.append("consultationID", "CONS_INVALID_TYPE_TEST_" + Date.now());
+  data.append("patientID", bru.getEnvVar("patient_id"));
+  data.append("doctorID", bru.getEnvVar("doctor_id"));
+  data.append("diagnosis", "Test diagnosis");
+  data.append("recordType", "NOT_A_REAL_TYPE");
+  data.append("file", fs.createReadStream("/tmp/test_consultation.pdf"));
+  req.setBody(data);
+  const headers = data.getHeaders();
+  headers["Authorization"] = "Bearer " + bru.getEnvVar("doctor_token");
+  req.setHeaders(headers);
 }
 
 tests {
@@ -31,6 +34,6 @@ tests {
     expect(res.body.status).to.equal("FAILED");
   });
   test("error mentions invalid recordType", function() {
-    expect(res.body.message).to.include("recordType").or.include("Invalid");
+    expect(res.body.message.includes("recordType") || res.body.message.includes("Invalid")).to.equal(true);
   });
 }

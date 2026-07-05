@@ -22,6 +22,6 @@ tests {
     expect(res.body.success).to.equal(false);
   });
   test("error message mentions CID", function() {
-    expect(res.body.message).to.include("CID").or.include("Invalid");
+    expect(res.body.message.includes("CID") || res.body.message.includes("Invalid")).to.equal(true);
   });
 }

@@ -4,6 +4,34 @@ meta {
   seq: 8
 }
 
+script:pre-request {
+  const phone = "90" + Math.floor(10000000 + Math.random() * 89999999);
+  const email = "seconddoc" + Date.now() + "@hospital.test";
+  const regRes = await fetch(bru.getEnvVar("base_url") + "/doctors/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Dr. No Relationship",
+      email: email,
+      phone: phone,
+      password: "TestPass123!",
+      specialization: "General Medicine",
+      hospitalID: "HOSP001",
+      licenseNumber: "NMC" + Date.now()
+    })
+  });
+  const regData = await regRes.json();
+  console.log("REGISTER STATUS:", regRes.status, JSON.stringify(regData));
+  const loginRes = await fetch(bru.getEnvVar("base_url") + "/auth/doctor/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: phone, password: "TestPass123!" })
+  });
+  const loginData = await loginRes.json();
+  console.log("LOGIN STATUS:", loginRes.status, JSON.stringify(loginData));
+  bru.setVar("second_doctor_token", loginData.token);
+}
+
 get {
   url: {{base_url}}/consultations/{{consultation_id}}
   body: none
@@ -11,7 +39,7 @@ get {
 }
 
 auth:bearer {
-  token: SECOND_DOCTOR_TOKEN_WITH_NO_TREATMENT_RELATIONSHIP
+  token: {{second_doctor_token}}
 }
 
 tests {

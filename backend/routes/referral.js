@@ -15,7 +15,7 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
         return res.status(400).json({ status: "FAILED", message: "Referral document (PDF) is required." });
     }
 
-    const { referralID, patientID, fromDoctorID, toDoctorID, referralReason } = req.body;
+    const { referralID, patientID, fromDoctorID, toDoctorID, referralReason, referralType } = req.body;
 
     if (!referralID || !patientID || !fromDoctorID || !toDoctorID || !referralReason) {
         return res.status(400).json({
@@ -25,7 +25,7 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
     }
 
     const result = await svc.createReferral(
-        { referralID, patientID, fromDoctorID, toDoctorID, referralReason },
+        { referralID, patientID, fromDoctorID, toDoctorID, referralReason, referralType },
         req.file.buffer,
         req.user.id
     );

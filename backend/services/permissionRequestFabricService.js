@@ -67,7 +67,16 @@ export async function createPermissionRequest(data) {
         return { status: "SUCCESS", requestID, expiresAt };
     } catch (err) {
         console.error("[PermissionRequest] create failed:", err);
-        return { status: "FAILED", message: err.message };
+        let realMessage = err.message;
+        try {
+            const detail = err.details?.[0]?.message ?? err.cause?.details?.[0]?.message;
+            if (detail) {
+                const match = detail.match(/chaincode response \d+, (.+)/);
+                realMessage = match ? match[1] : detail;
+            }
+        } catch (_) {}
+        console.error("[permissionRequestFabricService] error:", realMessage);
+        return { status: "FAILED", message: realMessage };
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();
@@ -120,7 +129,16 @@ export async function approvePermissionRequest(requestID, patientID) {
 
         return { status: "SUCCESS", requestID, accessExpires };
     } catch (err) {
-        return { status: "FAILED", message: err.message };
+        let realMessage = err.message;
+        try {
+            const detail = err.details?.[0]?.message ?? err.cause?.details?.[0]?.message;
+            if (detail) {
+                const match = detail.match(/chaincode response \d+, (.+)/);
+                realMessage = match ? match[1] : detail;
+            }
+        } catch (_) {}
+        console.error("[permissionRequestFabricService] error:", realMessage);
+        return { status: "FAILED", message: realMessage };
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();
@@ -168,7 +186,16 @@ export async function rejectPermissionRequest(requestID, patientID) {
 
         return { status: "SUCCESS", requestID };
     } catch (err) {
-        return { status: "FAILED", message: err.message };
+        let realMessage = err.message;
+        try {
+            const detail = err.details?.[0]?.message ?? err.cause?.details?.[0]?.message;
+            if (detail) {
+                const match = detail.match(/chaincode response \d+, (.+)/);
+                realMessage = match ? match[1] : detail;
+            }
+        } catch (_) {}
+        console.error("[permissionRequestFabricService] error:", realMessage);
+        return { status: "FAILED", message: realMessage };
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();
@@ -191,7 +218,16 @@ export async function getPermissionRequest(requestID) {
 
         return { status: "SUCCESS", data };
     } catch (err) {
-        return { status: "FAILED", message: err.message };
+        let realMessage = err.message;
+        try {
+            const detail = err.details?.[0]?.message ?? err.cause?.details?.[0]?.message;
+            if (detail) {
+                const match = detail.match(/chaincode response \d+, (.+)/);
+                realMessage = match ? match[1] : detail;
+            }
+        } catch (_) {}
+        console.error("[permissionRequestFabricService] error:", realMessage);
+        return { status: "FAILED", message: realMessage };
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();

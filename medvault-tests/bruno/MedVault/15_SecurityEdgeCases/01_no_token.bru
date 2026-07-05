@@ -18,6 +18,6 @@ tests {
     expect(res.body.status).to.equal("FAILED");
   });
   test("error message mentions token", function() {
-    expect(res.body.message).to.include("token").or.include("Token");
+    expect(res.body.message.includes("token") || res.body.message.includes("Token")).to.equal(true);
   });
 }

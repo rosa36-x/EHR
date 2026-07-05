@@ -4,8 +4,26 @@ meta {
   seq: 5
 }
 
+script:pre-request {
+  const res = await fetch(bru.getEnvVar("base_url") + "/permission-requests", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + bru.getEnvVar("doctor_token")
+    },
+    body: JSON.stringify({
+      patientID: bru.getEnvVar("patient_id"),
+      resourceType: "CONSULTATION",
+      resourceID: bru.getEnvVar("sensitive_consultation_id"),
+      reason: "Reject-test permission request"
+    })
+  });
+  const data = await res.json();
+  bru.setVar("reject_request_id", data.requestID);
+}
+
 patch {
-  url: {{base_url}}/permission-requests/PREQ_ID_FOR_REJECTION_TEST/reject
+  url: {{base_url}}/permission-requests/{{reject_request_id}}/reject
   body: none
   auth: bearer
 }
