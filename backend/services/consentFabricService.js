@@ -6,6 +6,15 @@ import { PatientAuth } from "./db.js";
 export async function grantConsent(data, actorID) {
     let gateway, client;
     try {
+        // Defense in depth — consent.js already checks req.body.patientID
+        // against req.user.id before calling this, but a patient must never
+        // be able to grant consent on another patient's behalf even if some
+        // future caller skips that route-level check.
+        if (data.patientID !== actorID) {
+            await logAudit({ actorID, actorRole: "patient", action: "ACCESS_DENIED", resourceType: "CONSENT", resourceID: data.consentID });
+            return { status: "ACCESS_DENIED", message: "Cannot grant consent on behalf of another patient." };
+        }
+
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
@@ -56,6 +65,18 @@ export async function grantConsent(data, actorID) {
     }
 }
 
+// Only the owning patient may read/check/revoke a consent record today.
+// Cross-org reads (e.g. a pharmacist checking consent under PharmacyMSP) are
+// explicitly not implemented yet — see accessControlService.js docstring —
+// so any non-owner, including doctors, is denied for now rather than left
+// unchecked. Widen this once the consent-lookup-by-org chaincode query exists.
+function assertOwnsConsent(data, actorID, actorRole) {
+    if (actorRole === "patient" && data.patientID === actorID) {
+        return null;
+    }
+    return { status: "ACCESS_DENIED", message: "You do not have permission to access this consent record." };
+}
+
 export async function getConsent(consentID, actorID, actorRole) {
     let gateway, client;
     try {
@@ -66,6 +87,12 @@ export async function getConsent(consentID, actorID, actorRole) {
 
         const raw  = await contract.evaluateTransaction("GetConsent", consentID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        const denied = assertOwnsConsent(data, actorID, actorRole);
+        if (denied) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "CONSENT", resourceID: consentID });
+            return denied;
+        }
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSENT", resourceID: consentID });
 
@@ -86,8 +113,17 @@ export async function checkConsent(consentID, actorID, actorRole) {
         client  = result.client;
         const { contract } = result;
 
-        const raw    = await contract.evaluateTransaction("CheckConsent", consentID);
-        const active = Buffer.from(raw).toString("utf8") === "true";
+        const raw  = await contract.evaluateTransaction("GetConsent", consentID);
+        const data = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        const denied = assertOwnsConsent(data, actorID, actorRole);
+        if (denied) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "CONSENT", resourceID: consentID });
+            return denied;
+        }
+
+        const activeRaw = await contract.evaluateTransaction("CheckConsent", consentID);
+        const active    = Buffer.from(activeRaw).toString("utf8") === "true";
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSENT", resourceID: consentID });
 
@@ -113,6 +149,12 @@ export async function revokeConsent(consentID, actorID) {
         // Get consent data before revoking for notification
         const raw      = await contract.evaluateTransaction("GetConsent", consentID);
         const consentData = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        const denied = assertOwnsConsent(consentData, actorID, "patient");
+        if (denied) {
+            await logAudit({ actorID, actorRole: "patient", action: "ACCESS_DENIED", resourceType: "CONSENT", resourceID: consentID });
+            return denied;
+        }
 
         await contract.submitTransaction("RevokeConsent", consentID, updatedAt);
 

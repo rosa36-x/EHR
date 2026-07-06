@@ -1,0 +1,29 @@
+meta {
+  name: Security - Cross-Patient Emergency Access Read Denied
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{base_url}}/emergency-access/{{emergency_access_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  // emergency_access_id belongs to {{patient_id}} (Alice) and {{doctor_id}}.
+  // A different patient must not be able to read the reason/doctor/timestamp.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+  test("record fields not leaked", function() {
+    expect(res.body.data).to.equal(undefined);
+  });
+}

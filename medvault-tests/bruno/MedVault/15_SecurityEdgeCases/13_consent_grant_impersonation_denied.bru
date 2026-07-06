@@ -1,0 +1,42 @@
+meta {
+  name: Security - Grant Consent For Another Patient Denied
+  type: http
+  seq: 13
+}
+
+script:pre-request {
+  bru.setVar("impersonation_consent_id", "CON" + Date.now());
+}
+
+post {
+  url: {{base_url}}/consents
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
+}
+
+body:json {
+  {
+    "consentID": "{{impersonation_consent_id}}",
+    "patientID": "{{second_patient_id}}",
+    "granteeOrg": "PharmacyMSP",
+    "resourceType": "PRESCRIPTION",
+    "permission": "READ",
+    "expiryDate": "2026-12-31T00:00:00.000Z"
+  }
+}
+
+tests {
+  // {{patient_token}} authenticates as {{patient_id}} (Alice), but the body
+  // names {{second_patient_id}} (Priya) as the patientID granting consent.
+  // Alice must not be able to grant consent on Priya's behalf.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

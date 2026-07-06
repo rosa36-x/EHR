@@ -83,7 +83,7 @@ export async function createTreatmentRelationship(data) {
 /**
  * Get a treatment relationship record.
  */
-export async function getTreatmentRelationship(relationshipID) {
+export async function getTreatmentRelationship(relationshipID, actorID, actorRole) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -93,6 +93,15 @@ export async function getTreatmentRelationship(relationshipID) {
 
         const raw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        // Only the patient the relationship is about, or the doctor on it,
+        // may view it.
+        const isOwner =
+            (actorRole === "patient" && actorID === data.patientID) ||
+            (actorRole === "doctor"  && actorID === data.doctorID);
+        if (!isOwner) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to view this treatment relationship." };
+        }
 
         return { status: "SUCCESS", data };
     } catch (err) {
@@ -136,13 +145,24 @@ export async function hasActiveTreatmentRelationship(doctorID, patientID) {
 /**
  * Discharge a patient — sets relationship to DISCHARGED and revokes access.
  */
-export async function dischargePatient(relationshipID, doctorID) {
+export async function dischargePatient(relationshipID, doctorID, skipOwnershipCheck = false) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
         const { contract } = result;
+
+        // Fetch and verify ownership BEFORE mutating — only the doctor on
+        // the relationship may discharge it. emergencyFabricService.js
+        // already verifies ownership itself before calling this to close an
+        // emergency episode, so it passes skipOwnershipCheck to avoid a
+        // redundant lookup — every other caller goes through the check.
+        const preRaw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (!skipOwnershipCheck && preData.doctorID !== doctorID) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to discharge this relationship." };
+        }
 
         const updatedAt = new Date().toISOString();
 
@@ -184,13 +204,21 @@ export async function dischargePatient(relationshipID, doctorID) {
  * Called automatically when no activity for 30 days.
  * Can also be called manually by admin.
  */
-export async function markDormant(relationshipID) {
+export async function markDormant(relationshipID, doctorID) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
         const { contract } = result;
+
+        // No admin role exists yet (see module docstring), so for now this
+        // is restricted to the doctor on the relationship, same as discharge.
+        const preRaw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.doctorID !== doctorID) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to modify this relationship." };
+        }
 
         const updatedAt = new Date().toISOString();
 
@@ -214,13 +242,19 @@ export async function markDormant(relationshipID) {
  * Reactivate a dormant relationship (e.g. new appointment scheduled).
  * Resets the dormant timer for another 30 days.
  */
-export async function reactivateTreatmentRelationship(relationshipID) {
+export async function reactivateTreatmentRelationship(relationshipID, doctorID) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
         const { contract } = result;
+
+        const preRaw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.doctorID !== doctorID) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to modify this relationship." };
+        }
 
         const now          = new Date();
         const dormantAfter = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();

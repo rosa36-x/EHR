@@ -1,0 +1,26 @@
+meta {
+  name: Security - Cross-Patient Consent Read Denied
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/consents/{{consent_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  // consent_id belongs to {{patient_id}} (Alice). second_patient_token
+  // belongs to a completely different patient — must not be able to read it.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

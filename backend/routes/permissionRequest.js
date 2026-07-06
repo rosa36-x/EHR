@@ -35,8 +35,9 @@ router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
  * Get a permission request record.
  */
 router.get("/:id", authenticate, async (req, res) => {
-    const result = await svc.getPermissionRequest(req.params.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const result = await svc.getPermissionRequest(req.params.id, req.user.id, req.user.role);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -45,7 +46,8 @@ router.get("/:id", authenticate, async (req, res) => {
  */
 router.patch("/:id/approve", authenticate, authorizeRoles("patient"), async (req, res) => {
     const result = await svc.approvePermissionRequest(req.params.id, req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -54,7 +56,8 @@ router.patch("/:id/approve", authenticate, authorizeRoles("patient"), async (req
  */
 router.patch("/:id/reject", authenticate, authorizeRoles("patient"), async (req, res) => {
     const result = await svc.rejectPermissionRequest(req.params.id, req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 export default router;

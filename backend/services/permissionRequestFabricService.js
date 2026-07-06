@@ -1,6 +1,7 @@
 import { getContract } from "./fabricService.js";
 import { generateID } from "./idService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
+import { logAudit } from "./auditMiddleware.js";
 import { PatientAuth, Doctor } from "./db.js";
 
 /**
@@ -95,6 +96,15 @@ export async function approvePermissionRequest(requestID, patientID) {
         client  = result.client;
         const { contract } = result;
 
+        // Fetch and verify ownership BEFORE mutating — only the patient the
+        // request is actually about may approve it.
+        const preRaw  = await contract.evaluateTransaction("GetPermissionRequest", requestID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.patientID !== patientID) {
+            await logAudit({ actorID: patientID, actorRole: "patient", action: "ACCESS_DENIED", resourceType: "PERMISSION_REQUEST", resourceID: requestID });
+            return { status: "ACCESS_DENIED", message: "You do not have permission to approve this request." };
+        }
+
         const now           = new Date();
         const accessExpires = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString(); // 48 hours
         const updatedAt     = now.toISOString();
@@ -156,6 +166,14 @@ export async function rejectPermissionRequest(requestID, patientID) {
         client  = result.client;
         const { contract } = result;
 
+        // Fetch and verify ownership BEFORE mutating.
+        const preRaw  = await contract.evaluateTransaction("GetPermissionRequest", requestID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.patientID !== patientID) {
+            await logAudit({ actorID: patientID, actorRole: "patient", action: "ACCESS_DENIED", resourceType: "PERMISSION_REQUEST", resourceID: requestID });
+            return { status: "ACCESS_DENIED", message: "You do not have permission to reject this request." };
+        }
+
         const updatedAt = new Date().toISOString();
 
         await contract.submitTransaction(
@@ -205,7 +223,7 @@ export async function rejectPermissionRequest(requestID, patientID) {
 /**
  * Get a permission request record.
  */
-export async function getPermissionRequest(requestID) {
+export async function getPermissionRequest(requestID, actorID, actorRole) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -215,6 +233,16 @@ export async function getPermissionRequest(requestID) {
 
         const raw  = await contract.evaluateTransaction("GetPermissionRequest", requestID);
         const data = JSON.parse(Buffer.from(raw).toString("utf8"));
+
+        // Only the patient the request concerns, or the doctor who made it,
+        // may view it.
+        const isOwner =
+            (actorRole === "patient" && actorID === data.patientID) ||
+            (actorRole === "doctor"  && actorID === data.doctorID);
+        if (!isOwner) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "PERMISSION_REQUEST", resourceID: requestID });
+            return { status: "ACCESS_DENIED", message: "You do not have permission to view this request." };
+        }
 
         return { status: "SUCCESS", data };
     } catch (err) {

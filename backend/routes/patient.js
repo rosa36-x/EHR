@@ -82,6 +82,7 @@ router.post("/complete-registration", async (req, res) => {
 
             aadhaarVID: uidaiResult.aadhaarVID,
             aadhaarToken: uidaiResult.aadhaarToken,
+            aadhaarHash: uidaiResult.aadhaarHash,
 
             phone,
             email,
@@ -91,6 +92,9 @@ router.post("/complete-registration", async (req, res) => {
 
         });
 
+    if (fabricResult.status === "DUPLICATE") {
+        return res.status(409).json(fabricResult);
+    }
     if (fabricResult.status !== "SUCCESS") {
         return res.status(500).json(fabricResult);
     }

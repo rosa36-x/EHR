@@ -111,3 +111,7 @@ medvault-tests/bruno/MedVault/fix-bruno-auth.sh
 medvault-tests/bruno/MedVault/fix-multipart-auth-headers.sh
 apply-audit-fixes.sh 
 medvault-audit-fixes.patch
+
+apply-medvault-ownership-dedup-and-tests.sh
+medvault-ownership-dedup-and-tests.patch
+medvault-ownership-and-dedup-fixes.patch

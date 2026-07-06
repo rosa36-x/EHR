@@ -179,7 +179,7 @@ export async function verifyDoctorOTP(phone, otp) {
  * Register patient auth record after Fabric registration.
  * Called internally from patient registration flow.
  */
-export async function registerPatientAuth(patientID, phone) {
+export async function registerPatientAuth(patientID, phone, aadhaarHash) {
     try {
         const existing = await PatientAuth.findOne({ phone });
         if (existing) {
@@ -189,6 +189,7 @@ export async function registerPatientAuth(patientID, phone) {
         await new PatientAuth({
             patientID,
             phone,
+            aadhaarHash,
             createdAt: new Date().toISOString(),
         }).save();
 

@@ -47,9 +47,14 @@ const doctorSchema = new mongoose.Schema({
  * Only auth credentials stored here.
  */
 const patientAuthSchema = new mongoose.Schema({
-    patientID:  { type: String, required: true, unique: true },
-    phone:      { type: String, required: true, unique: true },
-    createdAt:  { type: String },
+    patientID:   { type: String, required: true, unique: true },
+    phone:       { type: String, required: true, unique: true },
+    // Salted HMAC of the Aadhaar number (see uidaiService.hashAadhaar) — lets
+    // us detect the same real person re-registering under a different phone
+    // number, without ever storing the raw Aadhaar number. sparse: true
+    // because older records (if any existed before this field) won't have it.
+    aadhaarHash: { type: String, unique: true, sparse: true },
+    createdAt:   { type: String },
 });
 
 /**

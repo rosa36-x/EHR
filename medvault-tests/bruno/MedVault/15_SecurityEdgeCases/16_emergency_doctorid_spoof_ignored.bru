@@ -1,0 +1,78 @@
+meta {
+  name: Security - Emergency Access doctorID Spoof Ignored
+  type: http
+  seq: 16
+}
+
+script:pre-request {
+  // Mint a second doctor so we have a real, different doctorID to try to
+  // name as the beneficiary of emergency access opened by {{doctor_token}}.
+  const base  = bru.getEnvVar("base_url");
+  const phone = "90" + Math.floor(10000000 + Math.random() * 89999999);
+  const email = "spoofedtarget" + Date.now() + "@hospital.test";
+
+  const regRes = await fetch(base + "/doctors/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fullName: "Dr. Spoof Target",
+      email: email,
+      phone: phone,
+      password: "TestPass123!",
+      specialization: "General Medicine",
+      hospitalID: "HOSP001",
+      licenseNumber: "NMC" + Date.now().toString().slice(-8)
+    })
+  });
+  const regData = await regRes.json();
+  if (regRes.status !== 200) {
+    throw new Error("Pre-request setup failed registering target doctor: " + regRes.status + " - " + JSON.stringify(regData));
+  }
+  bru.setVar("spoof_target_doctor_id", regData.doctorID);
+}
+
+post {
+  url: {{base_url}}/emergency-access
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "emergencyAccessID": "EA_SPOOF",
+    "patientID": "{{patient_id}}",
+    "doctorID": "{{spoof_target_doctor_id}}",
+    "reason": "Attempting to name a different doctor as the beneficiary"
+  }
+}
+
+tests {
+  // {{doctor_token}} authenticates as {{doctor_id}}, but the body names a
+  // different doctor as doctorID. The route must ignore the body value and
+  // use req.user.id, so the created record should belong to {{doctor_id}},
+  // not the spoofed target.
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("emergencyAccessID returned", async function() {
+    expect(res.body.emergencyAccessID).to.be.a("string");
+    const emergencyAccessID = res.body.emergencyAccessID;
+
+    // Verify the actual stored doctorID is the real caller, not the spoof target.
+    const base = bru.getEnvVar("base_url");
+    const verifyRes = await fetch(base + "/emergency-access/" + emergencyAccessID, {
+      headers: { "Authorization": "Bearer " + bru.getEnvVar("doctor_token") }
+    });
+    const verifyData = await verifyRes.json();
+    expect(verifyRes.status).to.equal(200);
+    expect(verifyData.data.doctorID).to.equal(bru.getEnvVar("doctor_id"));
+    expect(verifyData.data.doctorID).to.not.equal(bru.getVar("spoof_target_doctor_id"));
+  });
+}

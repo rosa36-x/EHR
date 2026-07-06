@@ -1,0 +1,57 @@
+meta {
+  name: Patient Registration - Duplicate Aadhaar (Different Phone)
+  type: http
+  seq: 7
+}
+
+script:pre-request {
+  // Re-uses {{aadhaar_number}}/{{aadhaar_dob}} — the same real-world person
+  // already registered in 01/02 as {{patient_id}} — but with a brand new
+  // phone number. Should be rejected as a duplicate before ever reaching
+  // the ledger, even though the phone itself has never been used before.
+  const base = bru.getEnvVar("base_url");
+
+  const initRes = await fetch(base + "/patients/initiate-registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      aadhaarNumber: bru.getEnvVar("aadhaar_number"),
+      dob: bru.getEnvVar("aadhaar_dob")
+    })
+  });
+  const initData = await initRes.json();
+  if (initRes.status !== 200 || !initData.transactionID) {
+    throw new Error("Pre-request setup failed at initiate-registration: " + initRes.status + " - " + JSON.stringify(initData));
+  }
+  bru.setVar("dup_aadhaar_txn_id", initData.transactionID);
+}
+
+post {
+  url: {{base_url}}/patients/complete-registration
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "transactionID": "{{dup_aadhaar_txn_id}}",
+    "otp": "123456",
+    "fullName": "Alice Johnson",
+    "dob": "2005-01-01",
+    "gender": "Female",
+    "phone": "9000000003",
+    "email": "alice.newphone@patient.test"
+  }
+}
+
+tests {
+  test("status 409", function() {
+    expect(res.status).to.equal(409);
+  });
+  test("DUPLICATE status", function() {
+    expect(res.body.status).to.equal("DUPLICATE");
+  });
+  test("error mentions Aadhaar", function() {
+    expect(res.body.message.toLowerCase()).to.include("aadhaar");
+  });
+}

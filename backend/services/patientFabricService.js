@@ -3,10 +3,27 @@ import { logAudit } from "./auditMiddleware.js";
 import { registerPatientAuth } from "./authService.js";
 import { generateID } from "./idService.js";
 import { canAccessRecord } from "./accessControlService.js";
+import { PatientAuth } from "./db.js";
 
 export async function createPatient(patientData) {
     let gateway, client;
     try {
+        // Check for duplicates BEFORE writing to the ledger — otherwise a
+        // rejected duplicate still leaves an orphaned Patient asset on
+        // Fabric with no matching Mongo auth record. Checks both phone
+        // (already unique on PatientAuth) and aadhaarHash (catches the same
+        // real person re-registering under a different phone).
+        const existingByPhone = await PatientAuth.findOne({ phone: patientData.phone });
+        if (existingByPhone) {
+            return { status: "DUPLICATE", message: "A patient is already registered with this phone number." };
+        }
+        if (patientData.aadhaarHash) {
+            const existingByAadhaar = await PatientAuth.findOne({ aadhaarHash: patientData.aadhaarHash });
+            if (existingByAadhaar) {
+                return { status: "DUPLICATE", message: "This Aadhaar number is already registered to a patient." };
+            }
+        }
+
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
@@ -31,7 +48,15 @@ export async function createPatient(patientData) {
         );
 
         // Register patient auth record in MongoDB for login
-        await registerPatientAuth(patientID, patientData.phone);
+        const authResult = await registerPatientAuth(patientID, patientData.phone, patientData.aadhaarHash);
+        if (authResult.status !== "SUCCESS") {
+            // The ledger write already happened and can't be rolled back
+            // here (no delete/void chaincode function exists yet — see
+            // docs), but at minimum surface the failure instead of silently
+            // returning SUCCESS with no way to ever log in as this patient.
+            console.error("[createPatient] Ledger write succeeded but auth registration failed:", authResult.message);
+            return { status: "FAILED", message: `Patient written to ledger but auth registration failed: ${authResult.message}` };
+        }
 
         await logAudit({
             actorID:      "SYSTEM",

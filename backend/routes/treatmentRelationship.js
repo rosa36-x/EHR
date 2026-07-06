@@ -33,8 +33,9 @@ router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
  * GET /treatment-relationships/:id
  */
 router.get("/:id", authenticate, async (req, res) => {
-    const result = await svc.getTreatmentRelationship(req.params.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const result = await svc.getTreatmentRelationship(req.params.id, req.user.id, req.user.role);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -43,7 +44,8 @@ router.get("/:id", authenticate, async (req, res) => {
  */
 router.patch("/:id/discharge", authenticate, authorizeRoles("doctor"), async (req, res) => {
     const result = await svc.dischargePatient(req.params.id, req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -51,8 +53,9 @@ router.patch("/:id/discharge", authenticate, authorizeRoles("doctor"), async (re
  * Mark a relationship as dormant (no activity for 30 days).
  */
 router.patch("/:id/dormant", authenticate, authorizeRoles("doctor"), async (req, res) => {
-    const result = await svc.markDormant(req.params.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const result = await svc.markDormant(req.params.id, req.user.id);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -60,8 +63,9 @@ router.patch("/:id/dormant", authenticate, authorizeRoles("doctor"), async (req,
  * Reactivate a dormant relationship (new appointment scheduled).
  */
 router.patch("/:id/reactivate", authenticate, authorizeRoles("doctor"), async (req, res) => {
-    const result = await svc.reactivateTreatmentRelationship(req.params.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const result = await svc.reactivateTreatmentRelationship(req.params.id, req.user.id);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 export default router;

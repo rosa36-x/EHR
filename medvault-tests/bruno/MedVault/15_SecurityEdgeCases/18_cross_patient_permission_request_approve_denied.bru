@@ -1,0 +1,51 @@
+meta {
+  name: Security - Cross-Patient Permission Request Approve Denied
+  type: http
+  seq: 18
+}
+
+script:pre-request {
+  // Fresh request, independent of the already-approved {{permission_request_id}}
+  // from 11_PermissionRequest, so this test isn't coupled to run order.
+  const base = bru.getEnvVar("base_url");
+
+  const createRes = await fetch(base + "/permission-requests", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + bru.getEnvVar("doctor_token")
+    },
+    body: JSON.stringify({
+      patientID: bru.getEnvVar("patient_id"),
+      resourceType: "CONSULTATION",
+      resourceID: bru.getEnvVar("sensitive_consultation_id"),
+      reason: "Second review requested for related follow-up symptoms."
+    })
+  });
+  const createData = await createRes.json();
+  if (createRes.status !== 200 || !createData.requestID) {
+    throw new Error("Pre-request setup failed creating permission request: " + createRes.status + " - " + JSON.stringify(createData));
+  }
+  bru.setVar("cross_patient_preq_id", createData.requestID);
+}
+
+patch {
+  url: {{base_url}}/permission-requests/{{cross_patient_preq_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  // The request concerns {{patient_id}} (Alice), but {{second_patient_token}}
+  // authenticates as a different patient (Priya). Must not be approvable.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

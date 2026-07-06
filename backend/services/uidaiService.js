@@ -1,5 +1,29 @@
+import crypto from "crypto";
 import aadhaarDB from "../data/aadhaar_db.json" with { type: "json" };
 import otpStore from "../temp/otpStore.js";
+
+// Keyed hash so re-registration under a different phone can be detected by
+// comparing hashes, without ever persisting the raw Aadhaar number anywhere
+// (matches the project's existing "raw Aadhaar never stored" rule). Uses a
+// server secret rather than a random salt so the same Aadhaar number always
+// produces the same hash and can be looked up by equality.
+//
+// The dev fallback below is ONLY for local/test convenience. In production,
+// a missing secret would mean every deployment silently shares the same
+// publicly-known key (since it would be sitting in this file in the repo),
+// which defeats the point of hashing — anyone could precompute hashes for
+// guessed Aadhaar numbers and match them against the database. So instead
+// of silently falling back, we refuse to start.
+if (!process.env.AADHAAR_HASH_SECRET && process.env.NODE_ENV === "production") {
+    throw new Error(
+        "AADHAAR_HASH_SECRET must be set in production. Generate one with: openssl rand -hex 32"
+    );
+}
+const AADHAAR_HASH_SECRET = process.env.AADHAAR_HASH_SECRET ?? "dev-only-insecure-secret-change-in-prod";
+
+function hashAadhaar(aadhaarNumber) {
+    return crypto.createHmac("sha256", AADHAAR_HASH_SECRET).update(aadhaarNumber).digest("hex");
+}
 
 function generateOTP() {
     if (process.env.NODE_ENV === "test") {
@@ -78,13 +102,15 @@ function verifyOTP(transactionID, otp) {
 
     const aadhaarVID = generateVID();
     const aadhaarToken = generateToken();
+    const aadhaarHash = hashAadhaar(record.aadhaarNumber);
 
     delete otpStore[transactionID];
 
     return {
         status: "SUCCESS",
         aadhaarVID,
-        aadhaarToken
+        aadhaarToken,
+        aadhaarHash
     };
 }
 

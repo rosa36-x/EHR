@@ -1,0 +1,85 @@
+meta {
+  name: Second Patient Setup (For Cross-Patient Ownership Tests)
+  type: http
+  seq: 6
+}
+
+script:pre-request {
+  // Uses the 3rd mock Aadhaar entry (Priya Nair) so this doesn't collide
+  // with the primary test patient (Alice, entry 1). Runs once per full
+  // Bruno run — db:reset wipes PatientAuth beforehand, so this Aadhaar is
+  // always free at the start of a run. Do not also consume this Aadhaar
+  // number elsewhere in the collection.
+  const base = bru.getEnvVar("base_url");
+
+  const initRes = await fetch(base + "/patients/initiate-registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ aadhaarNumber: "901290129012", dob: "2003-09-21" })
+  });
+  const initData = await initRes.json();
+  if (initRes.status !== 200 || !initData.transactionID) {
+    throw new Error("Second patient setup failed at initiate-registration: " + initRes.status + " - " + JSON.stringify(initData));
+  }
+
+  const completeRes = await fetch(base + "/patients/complete-registration", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transactionID: initData.transactionID,
+      otp: "123456",
+      fullName: "Priya Nair",
+      dob: "2003-09-21",
+      gender: "Female",
+      phone: "9000000002",
+      email: "priya.second@patient.test"
+    })
+  });
+  const completeData = await completeRes.json();
+  if (completeRes.status !== 200 || !completeData.patient) {
+    throw new Error("Second patient setup failed at complete-registration: " + completeRes.status + " - " + JSON.stringify(completeData));
+  }
+  bru.setEnvVar("second_patient_id", completeData.patient.patientID);
+
+  const otpInitRes = await fetch(base + "/auth/patient/otp/initiate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "9000000002" })
+  });
+  if (otpInitRes.status !== 200) {
+    throw new Error("Second patient setup failed at otp/initiate: " + otpInitRes.status);
+  }
+
+  const otpVerifyRes = await fetch(base + "/auth/patient/otp/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "9000000002", otp: "123456" })
+  });
+  const otpVerifyData = await otpVerifyRes.json();
+  if (otpVerifyRes.status !== 200 || !otpVerifyData.token) {
+    throw new Error("Second patient setup failed at otp/verify: " + otpVerifyRes.status + " - " + JSON.stringify(otpVerifyData));
+  }
+  bru.setEnvVar("second_patient_token", otpVerifyData.token);
+}
+
+get {
+  url: {{base_url}}/patients/{{second_patient_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  // Main request doubles as a sanity check that the second patient identity
+  // actually works end to end before it's used to test denials elsewhere.
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("second_patient_id and second_patient_token are usable", function() {
+    expect(bru.getEnvVar("second_patient_id")).to.match(/^PAT/);
+    expect(bru.getEnvVar("second_patient_token").split(".").length).to.equal(3);
+  });
+}

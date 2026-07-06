@@ -1,0 +1,26 @@
+meta {
+  name: Security - Cross-Patient Permission Request Read Denied
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{base_url}}/permission-requests/{{permission_request_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  // permission_request_id concerns {{patient_id}} (Alice), not
+  // {{second_patient_id}} (Priya).
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

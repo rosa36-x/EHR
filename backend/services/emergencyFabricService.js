@@ -113,6 +113,19 @@ export async function createEmergencyAccess(data, actorID) {
 export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) {
     let gateway, client;
     try {
+        // Same ownership rule as closeEmergencyAccess: only the patient the
+        // episode belongs to, or the doctor who opened it, may read it.
+        const log = await EmergencyAccessLog.findOne({ emergencyAccessID });
+        if (log) {
+            const isOwner =
+                (actorRole === "patient" && actorID === log.patientID) ||
+                (actorRole === "doctor"  && actorID === log.doctorID);
+            if (!isOwner) {
+                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
+                return { status: "ACCESS_DENIED", message: "You do not have permission to view this emergency access record." };
+            }
+        }
+
         const result = await getContract("hospital");
         gateway = result.gateway;
         client  = result.client;
@@ -165,7 +178,9 @@ export async function closeEmergencyAccess(emergencyAccessID, actorID, actorRole
             return { status: "ACCESS_DENIED", message: "Only the doctor who opened this emergency access can close it." };
         }
 
-        const dischargeResult = await dischargePatient(log.relationshipID, log.doctorID);
+        // closeEmergencyAccess already verified actorID above, so skip the
+        // redundant ownership re-check inside dischargePatient.
+        const dischargeResult = await dischargePatient(log.relationshipID, log.doctorID, true);
         if (dischargeResult.status !== "SUCCESS") {
             console.error("[EmergencyAccess] Failed to discharge backing relationship on close:", dischargeResult.message);
             return { status: "FAILED", message: "Failed to revoke the underlying access relationship." };

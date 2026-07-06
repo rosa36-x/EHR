@@ -18,8 +18,16 @@ router.post("/", authenticate, authorizeRoles("patient"), async (req, res) => {
         });
     }
 
+    if (patientID !== req.user.id) {
+        return res.status(403).json({
+            status: "ACCESS_DENIED",
+            message: "Cannot grant consent on behalf of another patient.",
+        });
+    }
+
     const result = await svc.grantConsent(req.body, req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -28,7 +36,8 @@ router.post("/", authenticate, authorizeRoles("patient"), async (req, res) => {
  */
 router.get("/:id", authenticate, async (req, res) => {
     const result = await svc.getConsent(req.params.id, req.user.id, req.user.role);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -37,7 +46,8 @@ router.get("/:id", authenticate, async (req, res) => {
  */
 router.get("/:id/check", authenticate, async (req, res) => {
     const result = await svc.checkConsent(req.params.id, req.user.id, req.user.role);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -46,7 +56,8 @@ router.get("/:id/check", authenticate, async (req, res) => {
  */
 router.patch("/:id/revoke", authenticate, authorizeRoles("patient"), async (req, res) => {
     const result = await svc.revokeConsent(req.params.id, req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 export default router;

@@ -1,0 +1,53 @@
+meta {
+  name: Security - Cross-Patient Consent Revoke Denied
+  type: http
+  seq: 14
+}
+
+script:pre-request {
+  // Grant a fresh consent as the real owner (Alice) so this test has its
+  // own resource to attack, independent of 10_Consent/03_revoke already
+  // having revoked {{consent_id}}.
+  const base  = bru.getEnvVar("base_url");
+  const newID = "CON" + Date.now();
+
+  const grantRes = await fetch(base + "/consents", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + bru.getEnvVar("patient_token")
+    },
+    body: JSON.stringify({
+      consentID: newID,
+      patientID: bru.getEnvVar("patient_id"),
+      granteeOrg: "PharmacyMSP",
+      resourceType: "PRESCRIPTION",
+      permission: "READ",
+      expiryDate: "2026-12-31T00:00:00.000Z"
+    })
+  });
+  const grantData = await grantRes.json();
+  if (grantRes.status !== 200) {
+    throw new Error("Pre-request setup failed granting consent: " + grantRes.status + " - " + JSON.stringify(grantData));
+  }
+  bru.setVar("revoke_target_consent_id", newID);
+}
+
+patch {
+  url: {{base_url}}/consents/{{revoke_target_consent_id}}/revoke
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}
