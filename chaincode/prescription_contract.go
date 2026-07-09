@@ -112,6 +112,29 @@ func (s *SmartContract) GetPrescription(
 		return nil, err
 	}
 
+	// Same-org (HospitalMSP) reads are unaffected — doctors keep going through
+	// the existing treatment-relationship/sensitivity path in the backend.
+	// A different org (e.g. PharmacyMSP) reading this patient's prescription
+	// must have an active, non-expired consent grant for PRESCRIPTION.
+	callerOrg, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return nil, err
+	}
+
+	if callerOrg != "HospitalMSP" {
+		allowed, err := s.HasActiveConsent(ctx, prescription.PatientID, callerOrg, "PRESCRIPTION")
+		if err != nil {
+			return nil, err
+		}
+		if !allowed {
+			return nil, fmt.Errorf(
+				"CONSENT_REQUIRED: %s has no active consent from patient %s to access PRESCRIPTION",
+				callerOrg,
+				prescription.PatientID,
+			)
+		}
+	}
+
 	return &prescription, nil
 }
 func (s *SmartContract) UpdatePrescriptionStatus(

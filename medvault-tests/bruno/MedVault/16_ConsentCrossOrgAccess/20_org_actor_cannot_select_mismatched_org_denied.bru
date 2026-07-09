@@ -1,0 +1,28 @@
+meta {
+  name: Pharmacy Actor Cannot Select org=laboratory - Denied
+  type: http
+  seq: 20
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}?org=laboratory
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{pharmacy_actor_token}}
+}
+
+tests {
+  // pharmacy_actor_token's JWT carries org: "PharmacyMSP". Even though this
+  // org_actor account is real, it can only ever sign as its own org —
+  // ?org=laboratory must be rejected before the request ever reaches
+  // chaincode.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

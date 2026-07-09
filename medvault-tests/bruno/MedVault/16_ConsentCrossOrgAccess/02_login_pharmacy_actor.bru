@@ -1,0 +1,35 @@
+meta {
+  name: Login Pharmacy Org Actor
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/auth/org-actor/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "{{pharmacy_actor_phone}}",
+    "password": "{{pharmacy_actor_password}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("JWT token returned", function() {
+    expect(res.body.token).to.be.a("string");
+    expect(res.body.token.split(".").length).to.equal(3);
+    bru.setEnvVar("pharmacy_actor_token", res.body.token);
+  });
+  test("org is PharmacyMSP", function() {
+    expect(res.body.org).to.equal("PharmacyMSP");
+  });
+}

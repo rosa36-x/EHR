@@ -1,0 +1,28 @@
+meta {
+  name: Doctor Cannot Select org=pharmacy - Denied
+  type: http
+  seq: 19
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}?org=pharmacy
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  // enforceOrgMatchesRole (authMiddleware.js) — a doctor JWT has no org
+  // claim and must never be able to pick a partner org's Fabric identity
+  // via the ?org= query param, regardless of what consent grants happen
+  // to exist for this patient.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

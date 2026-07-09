@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import * as svc from "../services/labReportFabricService.js";
-import { authenticate } from "../services/authMiddleware.js";
+import { authenticate, enforceOrgMatchesRole } from "../services/authMiddleware.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -32,7 +32,7 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
  * GET /labreports/:id
  * Query param: ?org=laboratory|hospital (default: laboratory)
  */
-router.get("/:id", authenticate, async (req, res) => {
+router.get("/:id", authenticate, enforceOrgMatchesRole, async (req, res) => {
     const org = req.query.org ?? "laboratory";
     const result = await svc.getLabReport(req.params.id, req.user.id, req.user.role, org);
     const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
@@ -43,7 +43,7 @@ router.get("/:id", authenticate, async (req, res) => {
  * GET /labreports/:id/document
  * Query param: ?org=laboratory|hospital (default: laboratory)
  */
-router.get("/:id/document", authenticate, async (req, res) => {
+router.get("/:id/document", authenticate, enforceOrgMatchesRole, async (req, res) => {
     const org = req.query.org ?? "laboratory";
     const result = await svc.getLabReportDocument(req.params.id, req.user.id, req.user.role, org);
 

@@ -31,6 +31,7 @@ const PREFIXES = {
     permissionRequest:   "PREQ",
     treatmentRelationship: "TR",
     doctor:              "DOC",
+    orgActor:            "ORG",
     appointment:         "APT",
 };
 

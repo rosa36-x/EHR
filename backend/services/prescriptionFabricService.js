@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { getContract } from "./fabricService.js";
+import { getContract, mspIdForOrg } from "./fabricService.js";
 import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
@@ -112,10 +112,14 @@ export async function getPrescription(prescriptionID, actorID, actorRole, orgNam
             return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
-        await logAudit({ actorID, actorRole, action: "READ", resourceType: "PRESCRIPTION", resourceID: prescriptionID });
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
 
         return { status: "SUCCESS", data };
     } catch (err) {
+        if (err.message?.includes("CONSENT_REQUIRED")) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
+            return { status: "ACCESS_DENIED", message: "No active consent for cross-org access to this prescription." };
+        }
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -150,10 +154,14 @@ export async function getPrescriptionDocument(prescriptionID, actorID, actorRole
         const encryptedBuffer = await getFile(prescriptionCID);
         const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
 
-        await logAudit({ actorID, actorRole, action: "READ", resourceType: "PRESCRIPTION", resourceID: prescriptionID });
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
 
         return { status: "SUCCESS", document: plaintext };
     } catch (err) {
+        if (err.message?.includes("CONSENT_REQUIRED")) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
+            return { status: "ACCESS_DENIED", message: "No active consent for cross-org access to this prescription." };
+        }
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -179,7 +187,7 @@ export async function updatePrescriptionStatus(prescriptionID, status, dispensed
             updatedAt
         );
 
-        await logAudit({ actorID, actorRole, action: "UPDATE", resourceType: "PRESCRIPTION", resourceID: prescriptionID });
+        await logAudit({ actorID, actorRole, action: "UPDATE", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
 
         // Notify patient on dispense
         if (status === "DISPENSED") {
@@ -200,6 +208,10 @@ export async function updatePrescriptionStatus(prescriptionID, status, dispensed
 
         return { status: "SUCCESS", prescriptionID };
     } catch (err) {
+        if (err.message?.includes("CONSENT_REQUIRED")) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
+            return { status: "ACCESS_DENIED", message: "No active consent for cross-org access to this prescription." };
+        }
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();

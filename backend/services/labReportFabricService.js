@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { getContract } from "./fabricService.js";
+import { getContract, mspIdForOrg } from "./fabricService.js";
 import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
@@ -109,7 +109,7 @@ export async function getLabReport(reportID, actorID, actorRole, orgName = "labo
             return { status: access.status, message: access.message, requiresPermission: access.requiresPermission, resourceID: access.resourceID, resourceType: access.resourceType };
         }
 
-        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID });
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID, actorOrg: mspIdForOrg(orgName) });
 
         return { status: "SUCCESS", data };
     } catch (err) {
@@ -147,7 +147,7 @@ export async function getLabReportDocument(reportID, actorID, actorRole, orgName
         const encryptedBuffer = await getFile(reportCID);
         const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
 
-        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID });
+        await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID, actorOrg: mspIdForOrg(orgName) });
 
         return { status: "SUCCESS", document: plaintext };
     } catch (err) {

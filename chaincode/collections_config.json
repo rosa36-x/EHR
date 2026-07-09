@@ -24,6 +24,30 @@
     }
   },
   {
+    "name": "PharmacyConsentFlagCollection",
+    "policy": "OR('HospitalMSP.member', 'PharmacyMSP.member')",
+    "requiredPeerCount": 0,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true,
+    "endorsementPolicy": {
+      "signaturePolicy": "OR('HospitalMSP.peer', 'PharmacyMSP.peer')"
+    }
+  },
+  {
+    "name": "LaboratoryConsentFlagCollection",
+    "policy": "OR('HospitalMSP.member', 'LaboratoryMSP.member')",
+    "requiredPeerCount": 0,
+    "maxPeerCount": 3,
+    "blockToLive": 0,
+    "memberOnlyRead": true,
+    "memberOnlyWrite": true,
+    "endorsementPolicy": {
+      "signaturePolicy": "OR('HospitalMSP.peer', 'LaboratoryMSP.peer')"
+    }
+  },
+  {
     "name": "PrescriptionCollection",
     "policy": "OR('HospitalMSP.member', 'PharmacyMSP.member')",
     "requiredPeerCount": 0,

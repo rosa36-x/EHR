@@ -1,0 +1,40 @@
+meta {
+  name: Register Lab-Tech Org Actor
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/auth/org-actor/register
+  body: json
+  auth: none
+}
+
+script:pre-request {
+  bru.setVar("labtech_actor_phone", "8" + Date.now().toString().slice(-9));
+  bru.setVar("labtech_actor_email", "labtech" + Date.now() + "@medvault.test");
+  bru.setVar("labtech_actor_password", "LabtechPass123!");
+}
+
+body:json {
+  {
+    "fullName": "Lakshmi Lab Tech",
+    "org": "LaboratoryMSP",
+    "phone": "{{labtech_actor_phone}}",
+    "email": "{{labtech_actor_email}}",
+    "password": "{{labtech_actor_password}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("actorID has ORG prefix", function() {
+    expect(res.body.actorID).to.be.a("string");
+    expect(res.body.actorID).to.match(/^ORG/);
+  });
+}

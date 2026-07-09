@@ -1,12 +1,14 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import { Doctor, PatientAuth, OTP } from "./db.js";
+import { Doctor, OrgActor, PatientAuth, OTP } from "./db.js";
 import { sendSMS } from "./notificationService.js";
+import { generateID } from "./idService.js";
 
-const JWT_SECRET      = process.env.JWT_SECRET ?? "medvault-dev-secret-change-in-prod";
-const DOCTOR_JWT_EXP  = "8h";
-const PATIENT_JWT_EXP = "24h";
+const JWT_SECRET       = process.env.JWT_SECRET ?? "medvault-dev-secret-change-in-prod";
+const DOCTOR_JWT_EXP   = "8h";
+const PATIENT_JWT_EXP  = "24h";
+const ORG_ACTOR_JWT_EXP = "8h";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -253,6 +255,86 @@ export async function verifyPatientOTP(phone, otp) {
         );
 
         return { status: "SUCCESS", token, patientID: patient.patientID };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    }
+}
+
+// ── Org Actor Auth (pharmacist, lab-tech) ──────────────────────────────────────
+// Thin account type for partner-org staff. Authorization for cross-org record
+// access comes from patient consent (Consent.granteeOrg) checked on-chain, not
+// from anything in this profile — org is what matters, not the individual.
+
+const VALID_ORG_ACTOR_ORGS = ["PharmacyMSP", "LaboratoryMSP"];
+
+/**
+ * Register a new org actor (pharmacist/lab-tech).
+ */
+export async function registerOrgActor(data) {
+    try {
+        if (!VALID_ORG_ACTOR_ORGS.includes(data.org)) {
+            return { status: "FAILED", message: `org must be one of: ${VALID_ORG_ACTOR_ORGS.join(", ")}` };
+        }
+
+        const existing = await OrgActor.findOne({
+            $or: [{ phone: data.phone }, { email: data.email }],
+        });
+
+        if (existing) {
+            return { status: "FAILED", message: "Org actor already registered with this phone or email" };
+        }
+
+        const passwordHash = await bcrypt.hash(data.password, 10);
+        const actorID       = generateID("orgActor");
+        const createdAt     = new Date().toISOString();
+
+        const orgActor = new OrgActor({
+            actorID,
+            fullName: data.fullName,
+            org:      data.org,
+            phone:    data.phone,
+            email:    data.email,
+            passwordHash,
+            createdAt,
+        });
+
+        await orgActor.save();
+
+        return { status: "SUCCESS", actorID };
+    } catch (err) {
+        console.error("[Auth] registerOrgActor failed:", err);
+        return { status: "FAILED", message: err.message };
+    }
+}
+
+/**
+ * Org actor login with password. Returns JWT valid for 8 hours.
+ * JWT carries `org` (MSP ID) — the field the consent gate cares about.
+ */
+export async function loginOrgActorPassword(phone, password) {
+    try {
+        const orgActor = await OrgActor.findOne({ phone });
+
+        if (!orgActor) {
+            return { status: "FAILED", message: "Org actor not found" };
+        }
+
+        const valid = await bcrypt.compare(password, orgActor.passwordHash);
+        if (!valid) {
+            return { status: "FAILED", message: "Invalid password" };
+        }
+
+        const token = generateToken(
+            {
+                id:       orgActor.actorID,
+                role:     "org_actor",
+                org:      orgActor.org,
+                fullName: orgActor.fullName,
+            },
+            ORG_ACTOR_JWT_EXP
+        );
+
+        return { status: "SUCCESS", token, actorID: orgActor.actorID, org: orgActor.org };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     }

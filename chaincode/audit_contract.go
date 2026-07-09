@@ -17,6 +17,7 @@ func (s *SmartContract) CreateAuditLog(
 	resourceType string,
 	resourceID string,
 	timestamp string,
+	actorOrg string,
 ) error {
 
 	err := policy.EnforcePolicy(
@@ -39,6 +40,7 @@ func (s *SmartContract) CreateAuditLog(
 		AuditID:      auditID,
 		ActorID:      actorID,
 		ActorRole:    actorRole,
+		ActorOrg:     actorOrg,
 		Action:       action,
 		ResourceType: resourceType,
 		ResourceID:   resourceID,

@@ -1,0 +1,24 @@
+meta {
+  name: Revoke Cross-Org Consent
+  type: http
+  seq: 14
+}
+
+patch {
+  url: {{base_url}}/consents/{{cross_org_consent_id}}/revoke
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Pharmacy Get Prescription - Active Consent - Allowed
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}?org=pharmacy
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{pharmacy_actor_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("prescription data returned", function() {
+    expect(res.body.data.patientID).to.equal(bru.getEnvVar("patient_id"));
+  });
+}

@@ -55,6 +55,15 @@ const ORG_CONFIGS = {
 };
 
 /**
+ * Look up the MSP ID for an org name (e.g. "pharmacy" -> "PharmacyMSP").
+ * Used for audit logging so ActorOrg reflects the Fabric identity actually
+ * used for the call, not a client-supplied string.
+ */
+export function mspIdForOrg(orgName) {
+    return ORG_CONFIGS[orgName]?.mspId;
+}
+
+/**
  * Resolve the private key path from a keystore directory.
  * Keystore filenames are non-deterministic hashes ending in _sk.
  *

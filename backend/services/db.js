@@ -42,6 +42,27 @@ const doctorSchema = new mongoose.Schema({
 });
 
 /**
+ * OrgActor — application-layer identity for a partner-org staff member
+ * (pharmacist, lab tech) who authenticates to act as their org, e.g. a
+ * pharmacist reading a prescription under patient consent to PharmacyMSP.
+ *
+ * Deliberately thinner than Doctor: cross-org access is gated by
+ * (patient consent -> granteeOrg) on-chain, not by which specific person is
+ * logged in, so there's no license/specialization to track here — org is
+ * the unit of authorization. See accessControlService.js.
+ */
+const orgActorSchema = new mongoose.Schema({
+    actorID:      { type: String, required: true, unique: true },
+    fullName:     { type: String, required: true },
+    org:          { type: String, required: true, enum: ["PharmacyMSP", "LaboratoryMSP"] },
+    phone:        { type: String, required: true, unique: true },
+    email:        { type: String, required: true, unique: true },
+    passwordHash: { type: String, required: true },
+    isVerified:   { type: Boolean, default: true },
+    createdAt:    { type: String },
+});
+
+/**
  * Patient auth — lightweight auth record.
  * Full patient data lives on Fabric (PatientRecordCollection).
  * Only auth credentials stored here.
@@ -109,6 +130,7 @@ const emergencyAccessLogSchema = new mongoose.Schema({
 
 // ── Models ────────────────────────────────────────────────────────────────────
 export const Doctor             = mongoose.model("Doctor",             doctorSchema);
+export const OrgActor           = mongoose.model("OrgActor",           orgActorSchema);
 export const PatientAuth        = mongoose.model("PatientAuth",        patientAuthSchema);
 export const OTP                = mongoose.model("OTP",                otpSchema);
 export const Notification       = mongoose.model("Notification",       notificationSchema);

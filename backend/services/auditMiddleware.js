@@ -28,8 +28,12 @@ import { generateID } from "./idService.js";
  * @param {string} params.action       - READ | CREATE | UPDATE | ACCESS_DENIED | ACCESS_FAILED
  * @param {string} params.resourceType - e.g. "CONSULTATION", "PRESCRIPTION"
  * @param {string} params.resourceID   - the record ID being accessed
+ * @param {string} [params.actorOrg]   - MSP ID of the org the actor called
+ *                                        through (e.g. "PharmacyMSP"), for
+ *                                        cross-org access. Defaults to "" —
+ *                                        existing callers are unaffected.
  */
-export async function logAudit({ actorID, actorRole, action, resourceType, resourceID }) {
+export async function logAudit({ actorID, actorRole, action, resourceType, resourceID, actorOrg = "" }) {
     let gateway, client;
     try {
         const auditID   = generateID("audit");
@@ -48,7 +52,8 @@ export async function logAudit({ actorID, actorRole, action, resourceType, resou
             action,
             resourceType,
             resourceID,
-            timestamp
+            timestamp,
+            actorOrg
         );
     } catch (err) {
         // Audit failures must never crash the main flow

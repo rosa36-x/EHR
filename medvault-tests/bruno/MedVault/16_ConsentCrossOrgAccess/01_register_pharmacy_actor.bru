@@ -1,0 +1,40 @@
+meta {
+  name: Register Pharmacy Org Actor
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/auth/org-actor/register
+  body: json
+  auth: none
+}
+
+script:pre-request {
+  bru.setVar("pharmacy_actor_phone", "9" + Date.now().toString().slice(-9));
+  bru.setVar("pharmacy_actor_email", "pharmacy" + Date.now() + "@medvault.test");
+  bru.setVar("pharmacy_actor_password", "PharmacyPass123!");
+}
+
+body:json {
+  {
+    "fullName": "Priya Pharmacist",
+    "org": "PharmacyMSP",
+    "phone": "{{pharmacy_actor_phone}}",
+    "email": "{{pharmacy_actor_email}}",
+    "password": "{{pharmacy_actor_password}}"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("actorID has ORG prefix", function() {
+    expect(res.body.actorID).to.be.a("string");
+    expect(res.body.actorID).to.match(/^ORG/);
+  });
+}

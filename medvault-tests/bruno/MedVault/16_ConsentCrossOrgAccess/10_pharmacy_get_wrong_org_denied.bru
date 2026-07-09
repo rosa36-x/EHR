@@ -1,0 +1,26 @@
+meta {
+  name: Pharmacy Get Prescription - Wrong Org Consent - Denied
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}?org=pharmacy
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{pharmacy_actor_token}}
+}
+
+tests {
+  // Patient has an active PRESCRIPTION consent, but it's granted to
+  // LaboratoryMSP (09), not PharmacyMSP. The pharmacist must still be denied.
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

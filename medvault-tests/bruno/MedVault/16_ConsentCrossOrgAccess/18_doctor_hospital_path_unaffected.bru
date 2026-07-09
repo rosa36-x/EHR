@@ -1,0 +1,28 @@
+meta {
+  name: Doctor Get Prescription (Hospital org) - Unaffected By Consent Logic
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}?org=hospital
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  // callerOrg === HospitalMSP skips HasActiveConsent entirely in
+  // GetPrescription — the doctor keeps using the existing
+  // treatment-relationship path in the backend, regardless of any of the
+  // PharmacyMSP/LaboratoryMSP consent grants/denials above.
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

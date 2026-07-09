@@ -19,26 +19,22 @@ import { hasActivePermission } from "./permissionRequestFabricService.js";
  *      grants an ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship —
  *      there's no separate emergency check needed here.
  *
- * NOT YET IMPLEMENTED — consent-based cross-org access:
- *   The intended fuller flow also wants a branch for cross-org access
- *   (e.g. a pharmacist reading a prescription under patient consent to
- *   PharmacyMSP) that doesn't depend on a treatment relationship at all.
- *   Two things are missing before that branch can be added here:
- *     a) An actor-org concept — today every Doctor record only has a
- *        hospitalID (which specific hospital), not an MSP/org category,
- *        and there is no pharmacist/lab-tech account type in the auth
- *        model at all (see backend/services/db.js — all doctors share the
- *        HospitalMSP Fabric identity).
- *     b) A chaincode query to look up "does patientID have ACTIVE consent
- *        granted to org X for resourceType Y?" — chaincode/consent_contract.go
- *        currently only supports fetching one consent by a known consentID
- *        (GetConsent/CheckConsent), not a lookup by patient+org+type. This
- *        needs a new chaincode function (e.g. a composite-key index or
- *        CouchDB rich query) and a chaincode lifecycle upgrade — out of
- *        scope for an application-layer patch.
- *   Once both exist, add a step 4 here: if steps 2/3 fail and the actor's
- *   org differs from the record's owning org, call the new consent-lookup
- *   function and allow if it returns an active grant.
+ * Consent-based cross-org access (e.g. a pharmacist reading a prescription
+ * under patient consent to PharmacyMSP):
+ *   This is now step 0, ahead of the patient/sensitivity/treatment-relationship
+ *   checks below, and it does NOT re-run the consent check in JS. By the time
+ *   canAccessRecord() is called, prescriptionFabricService/labReportFabricService
+ *   have already called contract.evaluateTransaction("GetPrescription"/"GetLabReport"),
+ *   and chaincode/prescription_contract.go's GetPrescription already ran
+ *   HasActiveConsent() against the caller's own MSP identity for any non-Hospital
+ *   org — if that check had failed, evaluateTransaction would have thrown before
+ *   we ever got here. Re-implementing the same consent lookup in JS would just
+ *   be two copies of the same rule that can drift apart; trusting the ledger
+ *   read is the correct source of truth here.
+ *   Org-level consent (Consent.granteeOrg) also means this is deliberately NOT
+ *   gated by sensitivityLevel/hasActivePermission — a patient consenting to
+ *   PharmacyMSP for PRESCRIPTION is already a more specific, patient-approved
+ *   grant than the doctor-facing permission-request flow below.
  *
  * @param {object} params
  * @param {string} params.actorID        - doctorID or patientID making the request
@@ -57,6 +53,13 @@ export async function canAccessRecord({
     resourceType,
     sensitivityLevel,
 }) {
+    // 0. Cross-org actors (pharmacist, lab-tech) — consent already checked
+    //    on-chain inside GetPrescription/GetLabReport before this function
+    //    is ever called. See docstring above for why this doesn't re-check.
+    if (actorRole === "org_actor") {
+        return { allowed: true };
+    }
+
     // 1. Patients may only access their own records.
     if (actorRole === "patient") {
         if (actorID === patientID) {

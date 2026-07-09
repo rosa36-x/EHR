@@ -21,7 +21,8 @@ export async function createAuditLog(data) {
             data.action,
             data.resourceType,
             data.resourceID,
-            timestamp
+            timestamp,
+            data.actorOrg ?? ""
         );
 
         return { status: "SUCCESS", auditID };

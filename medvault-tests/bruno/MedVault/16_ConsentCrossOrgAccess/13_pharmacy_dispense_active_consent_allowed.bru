@@ -1,0 +1,39 @@
+meta {
+  name: Pharmacy Dispense Prescription - Active Consent - Allowed
+  type: http
+  seq: 13
+}
+
+patch {
+  url: {{base_url}}/prescriptions/{{cross_org_prescription_id}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{pharmacy_actor_token}}
+}
+
+script:pre-request {
+  bru.setVar("dispensed_at_now", new Date().toISOString());
+}
+
+body:json {
+  {
+    "status": "DISPENSED",
+    "dispensedAt": "{{dispensed_at_now}}",
+    "org": "pharmacy"
+  }
+}
+
+tests {
+  // UpdatePrescriptionStatus calls GetPrescription internally, so this
+  // re-runs the same live HasActiveConsent check as the read above — it
+  // isn't a separate gate that could get out of sync.
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

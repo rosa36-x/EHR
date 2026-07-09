@@ -1,7 +1,7 @@
 import express from "express";
 import multer from "multer";
 import * as svc from "../services/prescriptionFabricService.js";
-import { authenticate } from "../services/authMiddleware.js";
+import { authenticate, enforceOrgMatchesRole } from "../services/authMiddleware.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -32,7 +32,7 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
  * GET /prescriptions/:id
  * Query param: ?org=hospital|pharmacy (default: hospital)
  */
-router.get("/:id", authenticate, async (req, res) => {
+router.get("/:id", authenticate, enforceOrgMatchesRole, async (req, res) => {
     const org = req.query.org ?? "hospital";
     const result = await svc.getPrescription(req.params.id, req.user.id, req.user.role, org);
     const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
@@ -43,7 +43,7 @@ router.get("/:id", authenticate, async (req, res) => {
  * GET /prescriptions/:id/document
  * Query param: ?org=hospital|pharmacy (default: hospital)
  */
-router.get("/:id/document", authenticate, async (req, res) => {
+router.get("/:id/document", authenticate, enforceOrgMatchesRole, async (req, res) => {
     const org = req.query.org ?? "hospital";
     const result = await svc.getPrescriptionDocument(req.params.id, req.user.id, req.user.role, org);
 
@@ -60,7 +60,7 @@ router.get("/:id/document", authenticate, async (req, res) => {
  * PATCH /prescriptions/:id/status
  * Body: { status, dispensedAt?, org? }
  */
-router.patch("/:id/status", authenticate, async (req, res) => {
+router.patch("/:id/status", authenticate, enforceOrgMatchesRole, async (req, res) => {
     const { status, dispensedAt, org } = req.body;
 
     if (!status) {
@@ -76,7 +76,8 @@ router.patch("/:id/status", authenticate, async (req, res) => {
         org ?? "hospital"
     );
 
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 export default router;

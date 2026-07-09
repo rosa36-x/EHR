@@ -31,6 +31,11 @@ var PolicyRegistry = map[string][]string{
 	"GET_CONSENT":    {"HospitalMSP"},
 	"CHECK_CONSENT":  {"HospitalMSP"},
 	"REVOKE_CONSENT": {"HospitalMSP"},
+	// Called internally by GetPrescription/GetLabReport under the *grantee*
+	// org's identity (e.g. PharmacyMSP), so every org that can hold a
+	// cross-org grant needs to be allowed here — this is a self-check, not a
+	// Hospital-mediated read.
+	"CHECK_ACTIVE_CONSENT": {"HospitalMSP", "PharmacyMSP", "LaboratoryMSP", "GovernanceMSP", "ResearchMSP"},
 
 	// ── Audit ─────────────────────────────────────────────────────────────────
 	"AUDIT_TRANSACTION": {"GovernanceMSP"},

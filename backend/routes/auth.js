@@ -88,4 +88,40 @@ router.post("/patient/otp/verify", async (req, res) => {
     return res.status(result.status === "SUCCESS" ? 200 : 401).json(result);
 });
 
+// ── Org Actor Auth (pharmacist, lab-tech) ──────────────────────────────────────
+
+/**
+ * POST /auth/org-actor/register
+ * Body: { fullName, org, phone, email, password }
+ * org must be "PharmacyMSP" or "LaboratoryMSP".
+ */
+router.post("/org-actor/register", async (req, res) => {
+    const { fullName, org, phone, email, password } = req.body;
+
+    if (!fullName || !org || !phone || !email || !password) {
+        return res.status(400).json({
+            status: "FAILED",
+            message: "fullName, org, phone, email, password are required.",
+        });
+    }
+
+    const result = await authService.registerOrgActor(req.body);
+    return res.status(result.status === "SUCCESS" ? 200 : 400).json(result);
+});
+
+/**
+ * POST /auth/org-actor/login
+ * Body: { phone, password }
+ */
+router.post("/org-actor/login", async (req, res) => {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+        return res.status(400).json({ status: "FAILED", message: "phone and password are required." });
+    }
+
+    const result = await authService.loginOrgActorPassword(phone, password);
+    return res.status(result.status === "SUCCESS" ? 200 : 401).json(result);
+});
+
 export default router;
