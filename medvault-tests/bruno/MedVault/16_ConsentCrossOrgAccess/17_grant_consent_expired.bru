@@ -1,7 +1,7 @@
 meta {
-  name: Grant Consent - PharmacyMSP for LAB_REPORT (wrong type for this test)
+  name: Grant Consent - Already Expired
   type: http
-  seq: 7
+  seq: 17
 }
 
 post {
@@ -15,21 +15,23 @@ auth:bearer {
 }
 
 script:pre-request {
-  bru.setVar("wrong_type_consent_id_new", "CON" + Date.now());
+  bru.setVar("expired_consent_id_new", "CON" + Date.now());
 }
 
 body:json {
   {
-    "consentID": "{{wrong_type_consent_id_new}}",
+    "consentID": "{{expired_consent_id_new}}",
     "patientID": "{{patient_id}}",
     "granteeOrg": "PharmacyMSP",
-    "resourceType": "LAB_REPORT",
+    "resourceType": "PRESCRIPTION",
     "permission": "READ",
-    "expiryDate": "2027-12-31T00:00:00.000Z"
+    "expiryDate": "2020-01-01T00:00:00.000Z"
   }
 }
 
 tests {
+  // This overwrites the CON_IDX_<patient>_PharmacyMSP_PRESCRIPTION index
+  // from 11/14 with this new, already-expired consent — "latest grant wins".
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

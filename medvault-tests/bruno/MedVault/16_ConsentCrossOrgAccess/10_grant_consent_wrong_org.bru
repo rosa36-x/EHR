@@ -1,7 +1,7 @@
 meta {
-  name: Grant Consent - PharmacyMSP for PRESCRIPTION (correct)
+  name: Grant Consent - LaboratoryMSP for PRESCRIPTION (wrong org for this test)
   type: http
-  seq: 11
+  seq: 10
 }
 
 post {
@@ -15,14 +15,14 @@ auth:bearer {
 }
 
 script:pre-request {
-  bru.setVar("cross_org_consent_id_new", "CON" + Date.now());
+  bru.setVar("wrong_org_consent_id_new", "CON" + Date.now());
 }
 
 body:json {
   {
-    "consentID": "{{cross_org_consent_id_new}}",
+    "consentID": "{{wrong_org_consent_id_new}}",
     "patientID": "{{patient_id}}",
-    "granteeOrg": "PharmacyMSP",
+    "granteeOrg": "LaboratoryMSP",
     "resourceType": "PRESCRIPTION",
     "permission": "READ",
     "expiryDate": "2027-12-31T00:00:00.000Z"
@@ -35,9 +35,5 @@ tests {
   });
   test("SUCCESS status", function() {
     expect(res.body.status).to.equal("SUCCESS");
-  });
-  test("consentID returned", function() {
-    expect(res.body.consentID).to.be.a("string");
-    bru.setEnvVar("cross_org_consent_id", res.body.consentID);
   });
 }

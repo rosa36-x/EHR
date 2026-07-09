@@ -1,0 +1,65 @@
+meta {
+  name: Establish Clean Baseline - Grant+Revoke Pharmacy/PRESCRIPTION
+  type: http
+  seq: 6
+}
+
+script:pre-request {
+  // The consent flag collections live on the Fabric ledger, which persists
+  // across every rerun of this suite (db:reset only wipes Mongo) — the same
+  // static patient_id is reused forever, so a prior run's grants are still
+  // sitting there. "No consent has ever been granted" is therefore not a
+  // safe assumption to test against on a rerun.
+  //
+  // PutPrivateData always overwrites, so instead of assuming a pristine
+  // ledger, force the (patient_id, PharmacyMSP, PRESCRIPTION) flag into a
+  // known REVOKED state right here — deterministic regardless of history.
+  // Everything from here on tests transitions relative to this known
+  // baseline, not relative to "never touched."
+  const base = bru.getEnvVar("base_url");
+  const patientToken = bru.getEnvVar("patient_token");
+  const patientId = bru.getEnvVar("patient_id");
+
+  const consentId = "CON" + Date.now() + "BASE";
+
+  const grantRes = await fetch(base + "/consents", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + patientToken,
+    },
+    body: JSON.stringify({
+      consentID: consentId,
+      patientID: patientId,
+      granteeOrg: "PharmacyMSP",
+      resourceType: "PRESCRIPTION",
+      permission: "READ",
+      expiryDate: "2027-12-31T00:00:00.000Z",
+    }),
+  });
+  const grantData = await grantRes.json();
+  if (grantRes.status !== 200 || grantData.status !== "SUCCESS") {
+    throw new Error("Baseline grant failed: " + grantRes.status + " - " + JSON.stringify(grantData));
+  }
+
+  bru.setVar("baseline_consent_id", consentId);
+}
+
+patch {
+  url: {{base_url}}/consents/{{baseline_consent_id}}/revoke
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{patient_token}}
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+}

@@ -1,7 +1,7 @@
 meta {
-  name: Pharmacy Get Prescription - Expired Consent - Denied
+  name: Pharmacy Get Prescription - Wrong Resource Type Consent - Denied
   type: http
-  seq: 17
+  seq: 9
 }
 
 get {
@@ -15,6 +15,10 @@ auth:bearer {
 }
 
 tests {
+  // Patient has an active consent to PharmacyMSP, but only for LAB_REPORT
+  // (granted in 07). A PRESCRIPTION read must still be denied — the
+  // consent index is keyed on (patientID, granteeOrg, resourceType), so a
+  // grant for one resourceType must never leak into another.
   test("status 403", function() {
     expect(res.status).to.equal(403);
   });

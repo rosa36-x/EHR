@@ -1,7 +1,7 @@
 meta {
-  name: Pharmacy Get Prescription - After Revoke - Denied
+  name: Pharmacy Get Prescription - No Active Consent - Denied
   type: http
-  seq: 15
+  seq: 7
 }
 
 get {
@@ -15,8 +15,9 @@ auth:bearer {
 }
 
 tests {
-  // HasActiveConsent is a live ledger read on every call — no JS-side cache
-  // to go stale, so this must deny immediately after the revoke in 14.
+  // Relies on 06's baseline (Pharmacy/PRESCRIPTION forced to REVOKED), not
+  // on this patient having zero consent history — the ledger persists
+  // across reruns, so "never granted" isn't a safe thing to assert here.
   test("status 403", function() {
     expect(res.status).to.equal(403);
   });
