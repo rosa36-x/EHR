@@ -115,3 +115,8 @@ medvault-audit-fixes.patch
 apply-medvault-ownership-dedup-and-tests.sh
 medvault-ownership-dedup-and-tests.patch
 medvault-ownership-and-dedup-fixes.patch
+
+# AI anomaly outputs
+anomalyDetection/scored_features.csv
+anomalyDetection/synthetic_audit_log.csv
+anomalyDetection/features.csv
