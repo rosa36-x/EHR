@@ -42,13 +42,13 @@ Each route file mounts on a base path in `server.js`. Routes handle HTTP parsing
 | File | Mount path | Description |
 |------|-----------|-------------|
 | `uidai.js` | `/uidai` | Mock UIDAI endpoints: health check, Aadhaar + DOB authentication (returns OTP), and OTP verification. Used as the first step of patient registration. |
-| `auth.js` | `/auth` | Doctor password login, doctor OTP initiate/verify, and patient OTP initiate/verify. Issues JWTs on successful authentication. |
+| `auth.js` | `/auth` | Doctor password login, doctor OTP initiate/verify, patient OTP initiate/verify, and org-actor (pharmacist/lab-tech) register/login. Issues JWTs on successful authentication. |
 | `patient.js` | `/patients` | Two-step patient registration: `POST /initiate-registration` (triggers UIDAI OTP) and `POST /complete-registration` (verifies OTP, creates patient on Fabric). Also exposes `GET /:patientID` to fetch patient data. |
 | `doctor.js` | `/doctors` | Doctor registration (`POST /register`) and profile lookup by ID (`GET /:doctorID`) or by hospital (`GET /hospital/:hospitalID`). Never returns `passwordHash`. |
 | `consultation.js` | `/consultations` | Create, read, update consultations. File uploads handled via `multipart/form-data`. Enforces treatment relationship checks and sensitivity gates on reads. Returns encrypted CID and key reference. |
-| `prescription.js` | `/prescriptions` | Create and read prescriptions, update prescription status (e.g. `ISSUED` → `DISPENSED`). Org-aware — pharmacy org uses a different peer. |
-| `labreport.js` | `/labreports` | Create and read lab reports. Lab org uses LaboratoryMSP peer. Sensitivity gate applied on HIV, STI, genetic, drug, and pregnancy test types. |
-| `referral.js` | `/referrals` | Create and read referrals between doctors. Currently has no authentication middleware — a known gap documented in test notes. |
+| `prescription.js` | `/prescriptions` | Create and read prescriptions, update prescription status (e.g. `ISSUED` → `DISPENSED`). Org-aware — pharmacy org uses a different peer. A PharmacyMSP read/dispense is gated on the patient's active consent to Pharmacy for `PRESCRIPTION` (checked in chaincode, not JS); `?org=` is pinned to the caller's actual role/org by `enforceOrgMatchesRole`, so a doctor can't pass `?org=pharmacy` to ride someone else's consent. |
+| `labreport.js` | `/labreports` | Create and read lab reports. Lab org uses LaboratoryMSP peer. Sensitivity gate applied on HIV, STI, genetic, drug, and pregnancy test types. `?org=` is pinned to the caller's actual role/org by `enforceOrgMatchesRole`. |
+| `referral.js` | `/referrals` | Create and read referrals between doctors. |
 | `consent.js` | `/consents` | Patient grants cross-org data access consent (`POST /`), checks if consent is active (`GET /:id/check`), and revokes it (`PATCH /:id/revoke`). |
 | `permissionRequest.js` | `/permission-requests` | Doctor requests access to a sensitive record (`POST /`). Patient approves (`PATCH /:id/approve`) or rejects (`PATCH /:id/reject`). Approved requests grant a 48-hour access window; requests expire after 24 hours if unanswered. |
 | `treatmentRelationship.js` | `/treatment-relationships` | Doctor creates a treatment relationship with a patient (`POST /`), which is the primary access-control gate for normal records. Relationships can be marked dormant (`PATCH /:id/dormant`) or reactivated (`PATCH /:id/reactivate`). |
@@ -65,9 +65,9 @@ Each route file mounts on a base path in `server.js`. Routes handle HTTP parsing
 
 | File | Description |
 |------|-------------|
-| `fabricService.js` | Core Fabric gateway client. Maintains org configurations for all five MSPs (port mappings, TLS cert paths, signing identity paths). Exports `getContract(org)` which opens a gRPC connection, creates a gateway, and returns the chaincode contract handle. Resolves non-deterministic keystore filenames via glob. Each call opens and closes its own connection — no persistent connection pool. |
-| `db.js` | MongoDB connection via Mongoose. Defines three schemas: `Doctor` (full profile + `passwordHash`), `PatientAuth` (lightweight auth record — full patient data lives on Fabric), and `OTP` (with a TTL index that auto-deletes entries after 5 minutes). Exports model classes used by `authService.js` and `doctorService.js`. |
-| `idService.js` | Persistent sequential ID generator. Counters stored in `data/id_store.json` and survive server restarts. Each entity type has a fixed prefix: `PAT`, `CONS`, `PRE`, `LAB`, `REF`, `CON`, `AUD`, `EA`, `PREQ`, `TR`, `DOC`, `APT`. Throws on unknown entity types. |
+| `fabricService.js` | Core Fabric gateway client. Maintains org configurations for all five MSPs (port mappings, TLS cert paths, signing identity paths). Exports `getContract(org)` which opens a gRPC connection, creates a gateway, and returns the chaincode contract handle, and `mspIdForOrg(orgName)` (e.g. `"pharmacy"` → `"PharmacyMSP"`) used for audit `actorOrg` and for pinning `?org=` to a caller's actual org. Resolves non-deterministic keystore filenames via glob. Each call opens and closes its own connection — no persistent connection pool. |
+| `db.js` | MongoDB connection via Mongoose. Defines four schemas: `Doctor` (full profile + `passwordHash`), `OrgActor` (thin account for pharmacist/lab-tech partner-org staff — org is the unit of authorization, not the individual; see `accessControlService.js`), `PatientAuth` (lightweight auth record — full patient data lives on Fabric), and `OTP` (with a TTL index that auto-deletes entries after 5 minutes). Exports model classes used by `authService.js` and `doctorService.js`. |
+| `idService.js` | Persistent sequential ID generator. Counters stored in `data/id_store.json` and survive server restarts. Each entity type has a fixed prefix: `PAT`, `CONS`, `PRE`, `LAB`, `REF`, `CON`, `AUD`, `EA`, `PREQ`, `TR`, `DOC`, `ORG`, `APT`. Throws on unknown entity types. |
 | `kmsService.js` | AES-256-GCM key management. Generates 256-bit keys, encrypts document buffers with a random IV (so identical plaintexts produce different ciphertexts), and decrypts using the stored key. Keys persisted to `data/kms_store.json` as hex strings so they survive restarts. |
 | `ipfsService.js` | Helia (IPFS) wrapper. Singleton initialization — concurrency-safe via a shared `initPromise` so multiple simultaneous uploads don't create multiple nodes. Exports `uploadFile(buffer)` → CID string, `getFile(cid)` → Buffer (with a memory-safe size cap), `stopIPFS()` for graceful shutdown, and `registerShutdownHandlers()` called once at startup. |
 | `notificationService.js` | SMS via MSG91 and email via Nodemailer/Gmail SMTP. Falls back to `console.log` when API keys are absent (dev mode). Exports `sendSMS(phone, message)`, `sendEmail(to, subject, body)`, and a higher-level `notify(event, data)` dispatcher that formats messages for specific events (OTP sent, permission request created/approved/rejected, emergency access created). Notification records persisted to MongoDB. |
@@ -76,9 +76,9 @@ Each route file mounts on a base path in `server.js`. Routes handle HTTP parsing
 
 | File | Description |
 |------|-------------|
-| `authService.js` | Doctor and patient authentication logic. Doctor registration (bcrypt password hash, mock NMC license format validation, duplicate check). Doctor password login and OTP login flows. Patient OTP login flow. JWT signing with separate expiry for doctors (8h) and patients (24h). Exports `verifyToken(token)` used by `authMiddleware.js`. |
-| `authMiddleware.js` | Two Express middlewares: `authenticate` verifies the JWT from the `Authorization: Bearer` header and attaches `req.user` (`{ id, role }`). `authorizeRoles(...roles)` enforces role-based access — returns 403 if `req.user.role` is not in the allowed list. Used as route-level middleware. |
-| `auditMiddleware.js` | `logAudit({ actorID, actorRole, action, resourceType, resourceID })` — submits an audit log to the Governance org chaincode. Called directly by Fabric service functions after every transaction. Errors are swallowed so audit failures never interrupt the main request flow. |
+| `authService.js` | Doctor and patient authentication logic. Doctor registration (bcrypt password hash, mock NMC license format validation, duplicate check). Doctor password login and OTP login flows. Patient OTP login flow. `registerOrgActor`/`loginOrgActorPassword` for pharmacist/lab-tech accounts — JWT carries `org` (MSP ID), which `enforceOrgMatchesRole` checks against `?org=`. JWT signing with separate expiry for doctors (8h), patients (24h), and org actors (8h). Exports `verifyToken(token)` used by `authMiddleware.js`. |
+| `authMiddleware.js` | Three Express middlewares: `authenticate` verifies the JWT from the `Authorization: Bearer` header and attaches `req.user` (`{ id, role }`, plus `org` for org-actor JWTs). `authorizeRoles(...roles)` enforces role-based access — returns 403 if `req.user.role` is not in the allowed list. `enforceOrgMatchesRole` pins the `?org=` query param (which selects the Fabric identity used to sign the chaincode call) to the caller's actual role/org — doctor/patient can only use `org=hospital`; an org-actor can only use the org baked into their own JWT. Without this, `?org=` was pure client-supplied trust. Used as route-level middleware. |
+| `auditMiddleware.js` | `logAudit({ actorID, actorRole, action, resourceType, resourceID, actorOrg })` — submits an audit log to the Governance org chaincode. `actorOrg` (MSP ID, e.g. `"PharmacyMSP"`) is optional and defaults to `""` — only cross-org reads/dispenses currently pass it. Called directly by Fabric service functions after every transaction. Errors are swallowed so audit failures never interrupt the main request flow. |
 
 #### Domain services (Fabric wrappers)
 
@@ -91,7 +91,7 @@ Each of these follows the same pattern: validate inputs → encrypt file via KMS
 | `prescriptionFabricService.js` | `HospitalMSP` / `PharmacyMSP` | Create and read prescriptions, update status (`ISSUED` → `DISPENSED` → `CANCELLED`). Pharmacy org peer used for dispensing-side reads. Same treatment relationship + sensitivity gate as consultations. |
 | `labReportFabricService.js` | `LaboratoryMSP` | Create and read lab reports via the Laboratory org peer. Sensitivity gate applied for HIV, STI, genetic, drug, pregnancy, and toxicology test types. |
 | `referralFabricService.js` | `HospitalMSP` | Create and read referrals between doctors. Encrypts and stores the referral document on IPFS. |
-| `consentFabricService.js` | `HospitalMSP` | Patient grants, checks, and revokes cross-org data access consents on the ledger. |
+| `consentFabricService.js` | `HospitalMSP` | Patient grants, checks, and revokes cross-org data access consents on the ledger. Grant/revoke also mirror a minimal `{status, expiryDate}` flag into the grantee org's own private collection (`PharmacyConsentFlagCollection`/`LaboratoryConsentFlagCollection`) so that org can self-check active consent without ever reading `ConsentCollection` itself — see `docs/pdc-design.md`. |
 | `treatmentRelationshipFabricService.js` | `HospitalMSP` | Creates treatment relationships between a doctor and patient (`RECENT_APPOINTMENT`, `FOLLOW_UP_CHECKUP`, `ONGOING_TREATMENT`, `REFERRED_BY_DOCTOR`, `ASSIGNED_EMERGENCY_PHYSICIAN`). Mark dormant or reactivate. Exports `hasActiveTreatmentRelationship(doctorID, patientID)` used as an access gate by consultation and prescription services. |
 | `permissionRequestFabricService.js` | `HospitalMSP` | Doctor creates a permission request for sensitive record access (24-hour expiry). Patient approves (grants 48-hour access window) or rejects. Exports `hasActivePermission(doctorID, resourceID)` used as a secondary access gate by consultation and lab report services. |
 | `emergencyFabricService.js` | `HospitalMSP` | Creates an emergency access record with auto-generated ID, bypassing normal treatment relationship and sensitivity gates. Notifies the patient's emergency contact. |
@@ -121,13 +121,15 @@ JWT auth → treatment relationship check → sensitivity gate → `ACCESS_DENIE
 **Document storage:**
 Route handler receives `multipart/form-data` → `kmsService.encryptDocument(buffer)` → `ipfsService.uploadFile(encryptedBuffer)` → CID + `keyRef` stored on Fabric ledger → on read: Fabric returns CID + keyRef → `ipfsService.getFile(cid)` → `kmsService.decryptDocument(buffer, keyRef)` → file sent to client
 
+**Pharmacist reading/dispensing a prescription under consent:**
+Org-actor JWT (`role: "org_actor"`, `org: "PharmacyMSP"`) → `enforceOrgMatchesRole` confirms `?org=pharmacy` matches the JWT's own org → chaincode `GetPrescription` checks caller MSP ≠ HospitalMSP → `HasActiveConsent` reads `PharmacyConsentFlagCollection` (not `ConsentCollection`, which Pharmacy isn't a member of) → allowed/denied → `accessControlService.canAccessRecord` trusts that result for `org_actor` rather than re-checking treatment relationship → audit logged with `actorOrg: "PharmacyMSP"`. `PATCH /prescriptions/:id/status` (dispense) re-runs the same live consent check for free, since `UpdatePrescriptionStatus` calls `GetPrescription` internally.
+
 ---
 
 ## Known Gaps
 
 | Area | Notes |
 |------|-------|
-| `referral.js` route | No authentication middleware — any caller can create or read referrals |
 | Research org | Skeleton only — no chaincode or backend routes implemented |
 | `otpStore.js` | In-memory only — resets on restart, no distributed support for multi-instance deployments |
 | `test-gateway.js` / `test-ipfs.js` | Dev scripts committed to repo — should be moved to a `scripts/` folder or gitignored |
