@@ -54,7 +54,7 @@ const doctorSchema = new mongoose.Schema({
 const orgActorSchema = new mongoose.Schema({
     actorID:      { type: String, required: true, unique: true },
     fullName:     { type: String, required: true },
-    org:          { type: String, required: true, enum: ["PharmacyMSP", "LaboratoryMSP"] },
+    org:          { type: String, required: true, enum: ["PharmacyMSP", "LaboratoryMSP", "GovernanceMSP"] },
     phone:        { type: String, required: true, unique: true },
     email:        { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },

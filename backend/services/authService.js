@@ -265,7 +265,7 @@ export async function verifyPatientOTP(phone, otp) {
 // access comes from patient consent (Consent.granteeOrg) checked on-chain, not
 // from anything in this profile — org is what matters, not the individual.
 
-const VALID_ORG_ACTOR_ORGS = ["PharmacyMSP", "LaboratoryMSP"];
+const VALID_ORG_ACTOR_ORGS = ["PharmacyMSP", "LaboratoryMSP", "GovernanceMSP"];
 
 /**
  * Register a new org actor (pharmacist/lab-tech).
