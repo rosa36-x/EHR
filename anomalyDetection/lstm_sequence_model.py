@@ -97,7 +97,7 @@ class NextEventLSTM(nn.Module):
         return self.out(h)  # (1, seq_len, vocab_size)
 
 
-def train(model, sequences, token_to_id, epochs=8, lr=1e-2):
+def train(model, sequences, token_to_id, epochs=25, lr=1e-2):
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
     start_id = token_to_id[START_TOKEN]

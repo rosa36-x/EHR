@@ -17,10 +17,13 @@ logAudit() call site in backend/services/*.js as of this writing):
 
   Real actorOrg values:        "" (default, most actions) |
                                 "HospitalMSP" | "PharmacyMSP" | "LaboratoryMSP"
-    actorOrg is ONLY populated on PRESCRIPTION/LAB_REPORT READ/UPDATE calls,
-    via mspIdForOrg(orgName) — see backend/services/prescriptionFabricService.js
-    and labReportFabricService.js. Every other logAudit() call site leaves
-    it at auditMiddleware.js's default of "".
+    actorOrg is populated on PRESCRIPTION/LAB_REPORT READ/UPDATE calls, AND
+    on ACCESS_DENIED for those same resource types (the CONSENT_REQUIRED
+    cross-org-consent-gate denial path in prescriptionFabricService.js /
+    labReportFabricService.js also passes actorOrg via mspIdForOrg(orgName)
+    — confirmed against those files, not just the happy-path calls).
+    Every other logAudit() call site leaves it at auditMiddleware.js's
+    default of "".
 
   Real action values:          "CREATE" | "READ" | "UPDATE" |
                                 "ACCESS_DENIED" | "ACCESS_FAILED"
@@ -33,6 +36,22 @@ logAudit() call site in backend/services/*.js as of this writing):
   Real resourceType values:    "PATIENT" | "CONSULTATION" | "LAB_REPORT" |
                                 "PRESCRIPTION" | "REFERRAL" | "CONSENT" |
                                 "EMERGENCY_ACCESS" | "PERMISSION_REQUEST"
+
+  IMPORTANT — resourceID vs patientID (a real modeling limitation, not just
+  a synthetic-data quirk): the real AuditLog struct has NO patientID field.
+  For resourceType CONSENT/PATIENT, resourceID happens to equal the
+  patientID (that's what those routes operate on directly). For
+  CONSULTATION/PRESCRIPTION/LAB_REPORT/REFERRAL, resourceID is the
+  *record's own* generated ID (e.g. "PRE0001"), not the patient it belongs
+  to. This generator carries a separate `patientID` column throughout (we
+  know the ground truth because we generated the data), strictly for
+  building patient-centric features and for eval — a `label` column, not
+  something the real AuditLog schema has. In a real deployment, computing
+  any "how many orgs touched this one patient" feature requires an extra
+  join step (resourceID -> owning patientID) against the actual ledger
+  asset, which is NOT retrievable from AuditLog rows alone. See
+  feature_engineering.py's patient-centric section for where that join
+  would need to happen for real data.
 
 `label` (normal/anomalous) is for eval only — never fed to the model.
 
@@ -66,8 +85,27 @@ DOCTOR_PANELS = {d: random.sample(PATIENT_IDS, k=12) for d in DOCTOR_IDS}
 PHARM_PANELS = {p: random.sample(PATIENT_IDS, k=20) for p in PHARMACY_ACTOR_IDS}
 LAB_PANELS = {l: random.sample(PATIENT_IDS, k=20) for l in LAB_ACTOR_IDS}
 
+# resourceType values where resourceID IS the patientID in the real system.
+# Everything else gets its own fabricated resource ID (see fake_resource_id).
+RESOURCE_ID_IS_PATIENT_ID = {"CONSENT", "PATIENT"}
 
-def make_row(actor_id, actor_role, actor_org, action, resource_type, resource_id, ts, label):
+
+def fake_resource_id(resource_type: str, patient_id: str, rng: random.Random) -> str:
+    """A resourceID distinct from patientID, for resource types where the
+    real system generates its own record ID (PRE0001, LAB0001, etc.) rather
+    than keying directly on the patient. Mirrors reality: you cannot tell
+    which patient a PRESCRIPTION resourceID belongs to just by looking at
+    it — that's the whole reason this generator carries a separate
+    patientID column instead of conflating the two."""
+    if resource_type in RESOURCE_ID_IS_PATIENT_ID:
+        return patient_id
+    prefix = {"CONSULTATION": "CONS", "PRESCRIPTION": "PRE",
+              "LAB_REPORT": "LAB", "REFERRAL": "REF",
+              "EMERGENCY_ACCESS": "EA", "PERMISSION_REQUEST": "PREQ"}.get(resource_type, "REC")
+    return f"{prefix}{rng.randint(100000, 999999)}"
+
+
+def make_row(actor_id, actor_role, actor_org, action, resource_type, patient_id, ts, label, rng, resource_id=None):
     return {
         "auditID": str(uuid.uuid4()),
         "actorID": actor_id,
@@ -75,7 +113,10 @@ def make_row(actor_id, actor_role, actor_org, action, resource_type, resource_id
         "actorOrg": actor_org,
         "action": action,
         "resourceType": resource_type,
-        "resourceID": resource_id,
+        "resourceID": resource_id or fake_resource_id(resource_type, patient_id, rng),
+        # NOT a real AuditLog field -- synthetic ground truth only, see
+        # module docstring. Kept for patient-centric features + eval.
+        "patientID": patient_id,
         "timestamp": ts.isoformat(),
         "label": label,  # normal | anomalous (eval-only)
     }
@@ -113,7 +154,7 @@ def normal_doctor_events(base_day, rng):
             ("READ", "PATIENT", ""),
         ])
         ts = business_hours_ts(base_day, rng)
-        rows.append(make_row(doctor, "doctor", org, action, resource_type, patient, ts, "normal"))
+        rows.append(make_row(doctor, "doctor", org, action, resource_type, patient, ts, "normal", rng))
     return rows
 
 
@@ -126,7 +167,7 @@ def normal_patient_events(base_day, rng):
         action = rng.choices(["READ", "CREATE", "UPDATE"], weights=[70, 20, 10], k=1)[0]
         resource_type = "PATIENT" if action == "READ" and rng.random() < 0.4 else "CONSENT"
         ts = business_hours_ts(base_day, rng)
-        rows.append(make_row(patient, "patient", "", action, resource_type, patient, ts, "normal"))
+        rows.append(make_row(patient, "patient", "", action, resource_type, patient, ts, "normal", rng))
     return rows
 
 
@@ -134,21 +175,26 @@ def normal_org_actor_events(base_day, rng):
     """Pharmacy/lab org_actors reading PRESCRIPTION/LAB_REPORT cross-org
     under patient consent, plus the occasional legitimate dispense
     (UPDATE PRESCRIPTION) that IS preceded by a READ, as the real flow
-    requires (GetPrescription -> UpdatePrescriptionStatus)."""
+    requires (GetPrescription -> UpdatePrescriptionStatus). Since a legit
+    dispense re-reads the SAME record, it reuses the same resourceID as
+    the READ that preceded it -- fake_resource_id is only called once and
+    the id is threaded through, matching how one real prescriptionID is
+    read then updated."""
     rows = []
     if rng.random() < 0.5:
         actor = rng.choice(PHARMACY_ACTOR_IDS)
         patient = rng.choice(PHARM_PANELS[actor])
+        rid = fake_resource_id("PRESCRIPTION", patient, rng)
         ts = business_hours_ts(base_day, rng)
-        rows.append(make_row(actor, "org_actor", "PharmacyMSP", "READ", "PRESCRIPTION", patient, ts, "normal"))
+        rows.append(make_row(actor, "org_actor", "PharmacyMSP", "READ", "PRESCRIPTION", patient, ts, "normal", rng, resource_id=rid))
         if rng.random() < 0.6:  # legitimate dispense follows the read
             ts2 = ts + timedelta(minutes=rng.randint(1, 15))
-            rows.append(make_row(actor, "org_actor", "PharmacyMSP", "UPDATE", "PRESCRIPTION", patient, ts2, "normal"))
+            rows.append(make_row(actor, "org_actor", "PharmacyMSP", "UPDATE", "PRESCRIPTION", patient, ts2, "normal", rng, resource_id=rid))
     else:
         actor = rng.choice(LAB_ACTOR_IDS)
         patient = rng.choice(LAB_PANELS[actor])
         ts = business_hours_ts(base_day, rng)
-        rows.append(make_row(actor, "org_actor", "LaboratoryMSP", "READ", "LAB_REPORT", patient, ts, "normal"))
+        rows.append(make_row(actor, "org_actor", "LaboratoryMSP", "READ", "LAB_REPORT", patient, ts, "normal", rng))
     return rows
 
 
@@ -158,7 +204,7 @@ def normal_system_events(base_day, rng):
     if rng.random() < 0.15:
         patient = rng.choice(PATIENT_IDS)
         ts = business_hours_ts(base_day, rng)
-        rows.append(make_row(patient, "system", "", "CREATE", "PATIENT", patient, ts, "normal"))
+        rows.append(make_row(patient, "system", "", "CREATE", "PATIENT", patient, ts, "normal", rng))
     return rows
 
 
@@ -191,7 +237,7 @@ def inject_off_hours_burst(days, rng):
     for i in range(rng.randint(15, 30)):
         patient = rng.choice(PATIENT_IDS)
         ts = start_ts + timedelta(seconds=rng.randint(5, 90) * i)
-        rows.append(make_row(actor, role, org, "READ", resource_type, patient, ts, "anomalous"))
+        rows.append(make_row(actor, role, org, "READ", resource_type, patient, ts, "anomalous", rng))
     return rows
 
 
@@ -206,7 +252,7 @@ def inject_broad_access_burst(days, rng):
     for i in range(rng.randint(20, 40)):
         patient = rng.choice(PATIENT_IDS)  # NOT restricted to this doctor's panel
         ts = start_ts + timedelta(seconds=rng.randint(2, 20) * i)
-        rows.append(make_row(doctor, "doctor", "", "READ", "CONSULTATION", patient, ts, "anomalous"))
+        rows.append(make_row(doctor, "doctor", "", "READ", "CONSULTATION", patient, ts, "anomalous", rng))
     return rows
 
 
@@ -214,7 +260,12 @@ def inject_consent_probe_spree(days, rng):
     """A patient repeatedly attempting to access ANOTHER patient's CONSENT
     record. This mirrors the real assertOwnsConsent() check in
     consentFabricService.js exactly: patientID !== actorID on a CONSENT
-    resource logs action='ACCESS_DENIED', resourceType='CONSENT'."""
+    resource logs action='ACCESS_DENIED', resourceType='CONSENT'.
+
+    Distinct from inject_cross_org_denied_no_consent below: this is a
+    PATIENT being denied on a CONSENT resource (probing someone else's
+    consent record); that one is an org_actor being denied on a
+    PRESCRIPTION/LAB_REPORT resource (no active consent grant to read it)."""
     rows = []
     base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
     probing_patient = rng.choice(PATIENT_IDS)
@@ -222,14 +273,41 @@ def inject_consent_probe_spree(days, rng):
     start_ts = business_hours_ts(base_day, rng)
     for i in range(rng.randint(8, 20)):
         ts = start_ts + timedelta(minutes=rng.randint(1, 5) * i)
-        rows.append(make_row(probing_patient, "patient", "", "ACCESS_DENIED", "CONSENT", victim_patient, ts, "anomalous"))
+        rows.append(make_row(probing_patient, "patient", "", "ACCESS_DENIED", "CONSENT", victim_patient, ts, "anomalous", rng))
+    return rows
+
+
+def inject_cross_org_denied_no_consent(days, rng):
+    """An org_actor (pharmacy or lab) repeatedly attempting to read
+    PRESCRIPTION/LAB_REPORT records for patients who never granted them
+    consent (or whose consent expired/was revoked) -- the actual
+    CONSENT_REQUIRED gate in chaincode/prescription_contract.go's
+    GetPrescription (and the equivalent no-op path for lab reports).
+    Logged as action='ACCESS_DENIED', resourceType='PRESCRIPTION' or
+    'LAB_REPORT', actorOrg set -- NOT resourceType='CONSENT', which is why
+    this needs its own injection separate from inject_consent_probe_spree:
+    feature_engineering.py's consent_denied_ratio has to look at this
+    resourceType/actorOrg combination, not just resourceType='CONSENT'."""
+    rows = []
+    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    if rng.random() < 0.5:
+        actor, org, resource_type = rng.choice(PHARMACY_ACTOR_IDS), "PharmacyMSP", "PRESCRIPTION"
+    else:
+        actor, org, resource_type = rng.choice(LAB_ACTOR_IDS), "LaboratoryMSP", "LAB_REPORT"
+    start_ts = business_hours_ts(base_day, rng)
+    for i in range(rng.randint(6, 15)):
+        patient = rng.choice(PATIENT_IDS)  # not necessarily in the actor's normal panel
+        ts = start_ts + timedelta(minutes=rng.randint(1, 8) * i)
+        rows.append(make_row(actor, "org_actor", org, "ACCESS_DENIED", resource_type, patient, ts, "anomalous", rng))
     return rows
 
 
 def inject_dispense_without_read(days, rng):
     """A pharmacy org_actor issuing UPDATE/PRESCRIPTION (dispense) for
     resourceIDs it never READ first — skipping the real
-    GetPrescription -> UpdatePrescriptionStatus flow."""
+    GetPrescription -> UpdatePrescriptionStatus flow. Each event gets its
+    own fabricated resourceID (no matching prior READ anywhere in the
+    dataset for that ID), which is exactly the violation being modeled."""
     rows = []
     base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
     actor = rng.choice(PHARMACY_ACTOR_IDS)
@@ -237,7 +315,7 @@ def inject_dispense_without_read(days, rng):
     for i in range(rng.randint(6, 12)):
         patient = rng.choice(PATIENT_IDS)
         ts = start_ts + timedelta(minutes=rng.randint(1, 10) * i)
-        rows.append(make_row(actor, "org_actor", "PharmacyMSP", "UPDATE", "PRESCRIPTION", patient, ts, "anomalous"))
+        rows.append(make_row(actor, "org_actor", "PharmacyMSP", "UPDATE", "PRESCRIPTION", patient, ts, "anomalous", rng))
     return rows
 
 
@@ -250,6 +328,7 @@ def generate(days, seed=42, n_bursts=None):
         rows += inject_off_hours_burst(days, rng)
         rows += inject_broad_access_burst(days, rng)
         rows += inject_consent_probe_spree(days, rng)
+        rows += inject_cross_org_denied_no_consent(days, rng)
         rows += inject_dispense_without_read(days, rng)
 
     df = pd.DataFrame(rows)

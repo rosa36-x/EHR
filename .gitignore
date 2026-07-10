@@ -118,6 +118,7 @@ medvault-ownership-and-dedup-fixes.patch
 
 # AI anomaly outputs
 anomalyDetection/scored_features.csv
+anomalyDetection/patient_features.csv
 anomalyDetection/synthetic_audit_log.csv
 anomalyDetection/features.csv
 anomalyDetection/lstm_scored_actor_days.csv
