@@ -170,6 +170,7 @@ auditID
 | auditID      | string |
 | actorID      | string |
 | actorRole    | string |
+| actorOrg     | string |
 | action       | string |
 | resourceType | string |
 | resourceID   | string |
@@ -231,7 +232,39 @@ referralID
 
 ---
 
-# Asset ID Conventions
+# 8b. ConsentFlag Asset
+
+## Purpose
+
+Minimal mirror of a Consent, written into a per-grantee-org private
+collection (`PharmacyConsentFlagCollection`, `LaboratoryConsentFlagCollection`)
+so that org can answer "do I have active consent?" without ever being a
+member of ConsentCollection. Not a standalone chaincode transaction/asset
+with its own ID — written and read internally by GrantConsent, RevokeConsent,
+and HasActiveConsent in `consent_contract.go`.
+
+## Storage
+
+PharmacyConsentFlagCollection / LaboratoryConsentFlagCollection (one entry
+per (patientID, resourceType) pair — the org is implied by which collection
+the entry is in, so it isn't part of the key)
+
+## Key
+
+`CFLAG_<patientID>_<resourceType>`
+
+| Field      | Type   |
+| ---------- | ------ |
+| status     | string |
+| expiryDate | string |
+
+Deliberately excludes `consentID`, `permission`, `createdAt` — anything not
+needed to answer "is this still active" stays out of the collection the
+partner org can read.
+
+---
+
+# 9. Asset ID Conventions
 
 | Asset            | Prefix |
 | ---------------- | ------ |

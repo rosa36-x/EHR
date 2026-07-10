@@ -55,7 +55,7 @@ The following document types are encrypted before upload to IPFS:
 Algorithm:
 
 ```text
-AES-256
+AES-256-GCM
 ```
 
 Purpose:
@@ -131,7 +131,7 @@ Example:
 ```json
 {
   "keyID": "KEY001",
-  "algorithm": "AES-256",
+  "algorithm": "AES-256-GCM",
   "status": "ACTIVE",
   "createdAt": "2026-06-16T10:00:00Z"
 }

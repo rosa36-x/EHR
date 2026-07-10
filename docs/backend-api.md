@@ -224,6 +224,9 @@ Verifies the OTP received from the UIDAI Mock Service and registers the patient 
 | Fabric Gateway Integration     | ✅ Completed — live 5-org network (HospitalMSP, PharmacyMSP, LaboratoryMSP, GovernanceMSP, ResearchMSP not yet onboarded) |
 | Consultation / Prescription / LabReport / Referral chaincode writes | ✅ Completed |
 | Consent, Permission Request, Treatment Relationship, Emergency Access | ✅ Completed |
+| Org Actor Registration & Auth (pharmacist, lab-tech) | ✅ Completed |
+| Consent-Based Cross-Org Access (Pharmacy reading/dispensing prescriptions under patient consent) | ✅ Completed |
+| Duplicate Patient Detection (aadhaarHash dedup) | ✅ Completed |
 | Audit Logging (on-chain)       | ✅ Completed        |
 | IPFS/Helia Encrypted Document Storage | ✅ Completed |
 | Research Org / AI Anomaly Detection Engine | ⏳ Not started |
@@ -237,8 +240,6 @@ This document currently only covers the patient registration workflow in detail 
 # Future Enhancements
 
 * Stand up the Research org and onboard it to the channel.
-* Build the AI anomaly detection engine (Isolation Forest + LSTM with SHAP) as a governed Fabric identity.
-* Add the consent-based cross-org access branch to `accessControlService.canAccessRecord` (see comments in that file for the two prerequisites).
-* Implement duplicate patient detection.
+* Build the AI anomaly detection engine (Isolation Forest + LSTM with SHAP) as a governed, audited actor identity (see `AI_MODEL_ROADMAP.md`).
 * Integrate with a frontend registration portal.
 

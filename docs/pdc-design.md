@@ -37,7 +37,41 @@ Contains highly sensitive patient identity information, Aadhaar-derived identifi
 
 ### Purpose
 
-Contains patient consent grants, revocations, permissions, and access-control information.
+Contains patient consent grants, revocations, permissions, and access-control information. Only HospitalMSP is a member — PharmacyMSP/LaboratoryMSP identities cannot read this collection at all, by design (see the two flag collections below for how they get a cross-org access decision without it).
+
+---
+
+## PharmacyConsentFlagCollection
+
+### Members
+
+* HospitalMSP
+* PharmacyMSP
+
+### Stores
+
+* ConsentFlag (minimal mirror: `status`, `expiryDate` only — no `permission`, `consentID`, or other Consent fields)
+
+### Purpose
+
+Lets a PharmacyMSP identity answer "do I have active consent for this patient/resourceType?" without ever being a member of ConsentCollection. Written by GrantConsent/RevokeConsent whenever `granteeOrg == "PharmacyMSP"`; read by HasActiveConsent from inside GetPrescription when the caller is PharmacyMSP. Only reflects grants actually made to Pharmacy — never other orgs' or other patients' consent.
+
+---
+
+## LaboratoryConsentFlagCollection
+
+### Members
+
+* HospitalMSP
+* LaboratoryMSP
+
+### Stores
+
+* ConsentFlag (same minimal shape as above)
+
+### Purpose
+
+Same as PharmacyConsentFlagCollection, scoped to `granteeOrg == "LaboratoryMSP"`. Not currently read by any chaincode function — `GET_LAB_REPORT` policy doesn't allow a cross-org (non-Hospital/Laboratory) caller yet, so nothing calls HasActiveConsent for lab reports today. Present for symmetry/future use if a third org needs lab-report access under consent.
 
 ---
 
@@ -123,11 +157,19 @@ Reason:
 
 # Current Collection Parameters
 
-| Collection              | Required Peer Count | Max Peer Count |
-| ----------------------- | ------------------- | -------------- |
-| PatientRecordCollection | 1                   | 3              |
-| ConsentCollection       | 1                   | 3              |
-| PrescriptionCollection  | 1                   | 3              |
-| LabReportCollection     | 1                   | 3              |
+| Collection                       | Required Peer Count | Max Peer Count |
+| --------------------------------- | -------------------- | -------------- |
+| PatientRecordCollection           | 0                     | 3              |
+| ConsentCollection                 | 0                     | 3              |
+| PharmacyConsentFlagCollection     | 0                     | 3              |
+| LaboratoryConsentFlagCollection   | 0                     | 3              |
+| PrescriptionCollection            | 0                     | 3              |
+| LabReportCollection               | 0                     | 3              |
+
+Required Peer Count is 0 (not 1) across all collections — single-peer-per-org
+topology, so requiring endorsement from a second peer of the same org isn't
+possible. This table previously listed 1 for the original four collections;
+corrected to match the actual `collections_config.json`, which has used 0
+since the single-peer-per-org fix.
 
 These values are based on the current deployment architecture where each organization maintains a single peer.

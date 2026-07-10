@@ -10,7 +10,7 @@ This document describes the test cases used to validate the UIDAI Mock Service a
 
 * Backend: Node.js + Express
 * UIDAI Mock Service
-* Hyperledger Fabric: Mock Integration (Gateway Pending)
+* Hyperledger Fabric: Live 5-org network (Gateway integration complete)
 * API Testing Tool: curl / Postman
 
 ---
@@ -272,8 +272,8 @@ Biometric authentication failed
 | Missing Input Validation      | ✅ Pass    |
 | Patient Registration API      | ✅ Pass    |
 | Biometric Authentication      | ✅ Pass    |
-| Duplicate Patient Detection   | ⏳ Pending |
-| Hyperledger Fabric Submission | ⏳ Pending |
+| Duplicate Patient Detection   | ✅ Pass (aadhaarHash dedup) |
+| Hyperledger Fabric Submission | ✅ Pass    |
 
 ---
 
@@ -282,5 +282,4 @@ Biometric authentication failed
 * All UIDAI Mock APIs function as expected.
 * OTP expiration is successfully enforced.
 * Backend validation rejects incomplete requests.
-* Patient registration currently uses a mock Fabric service.
-* Final end-to-end validation will be performed after Hyperledger Fabric Gateway integration.
+* Patient registration submits to the live 5-org Hyperledger Fabric network (no longer a mock Fabric service — this note predates that integration).
