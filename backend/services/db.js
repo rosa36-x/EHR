@@ -100,7 +100,7 @@ const otpSchema = new mongoose.Schema({
  */
 const notificationSchema = new mongoose.Schema({
     recipientID:   { type: String, required: true }, // patientID or doctorID
-    recipientRole: { type: String, enum: ["doctor", "patient"], required: true },
+    recipientRole: { type: String, enum: ["doctor", "patient", "org_actor"], required: true },
     phone:         { type: String },
     email:         { type: String },
     event:         { type: String, required: true },
