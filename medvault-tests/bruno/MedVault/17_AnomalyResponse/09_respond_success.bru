@@ -1,0 +1,39 @@
+meta {
+  name: Respond successfully (happy path) -> 200
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGCLARIFY/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {
+    "text": "This was a legitimate off-hour access, I was covering an on-call shift."
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("clarificationText persisted", function() {
+    expect(res.body.data.clarificationText).to.include("on-call shift");
+  });
+  test("clarificationSubmittedAt set", function() {
+    expect(res.body.data.clarificationSubmittedAt).to.be.a("string");
+  });
+  test("status still PENDING (respond does not bypass review)", function() {
+    expect(res.body.data.status).to.equal("PENDING");
+  });
+}

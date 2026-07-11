@@ -1,0 +1,23 @@
+meta {
+  name: Respond without auth -> 401
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGCLARIFY/respond
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "text": "This was a legitimate off-hour access."
+  }
+}
+
+tests {
+  test("status 401", function() {
+    expect(res.status).to.equal(401);
+  });
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Respond to a flag where clarification was never requested -> 400
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGNOCLARIFY/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {
+    "text": "Trying to respond anyway."
+  }
+}
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+}

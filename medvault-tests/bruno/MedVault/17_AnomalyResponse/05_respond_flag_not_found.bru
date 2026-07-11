@@ -1,0 +1,27 @@
+meta {
+  name: Respond to nonexistent flag -> 404
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/anomalies/NOSUCHFLAG/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {
+    "text": "This was a legitimate off-hour access."
+  }
+}
+
+tests {
+  test("status 404", function() {
+    expect(res.status).to.equal(404);
+  });
+}

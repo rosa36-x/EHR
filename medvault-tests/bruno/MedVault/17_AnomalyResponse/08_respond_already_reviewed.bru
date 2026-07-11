@@ -1,0 +1,27 @@
+meta {
+  name: Respond to a flag Governance already reviewed -> 400
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGREVIEWED/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {
+    "text": "Too late, already reviewed."
+  }
+}
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+}

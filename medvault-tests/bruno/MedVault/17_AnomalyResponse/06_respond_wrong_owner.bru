@@ -1,0 +1,27 @@
+meta {
+  name: Respond as a different actor than the flag owner -> 403
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGCLARIFY/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor2_token}}
+}
+
+body:json {
+  {
+    "text": "Trying to respond to someone else's flag."
+  }
+}
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+}

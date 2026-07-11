@@ -1,0 +1,28 @@
+meta {
+  name: Respond with empty body -> 400
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGCLARIFY/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {}
+}
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+}

@@ -224,11 +224,20 @@ def generate_normal_traffic(days, rng):
 
 # ---- Injected, labeled anomalies, each grounded in a real code path --------
 
+def safe_burst_day_offset(days, rng):
+    """Clamped replacement for safe_burst_day_offset(days, rng), which throws
+    "empty range in randrange" for --days < 6 (e.g. days=5 -> randint(3, 2)).
+    Behaves identically to the original for days >= 6."""
+    lo = min(3, days - 1) if days > 1 else 0
+    hi = max(lo, days - 3)
+    return rng.randint(lo, hi)
+
+
 def inject_off_hours_burst(days, rng):
     """A doctor or org_actor reading many distinct patients' records at
     2-4am — off-hours volume anomaly."""
     rows = []
-    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
     actor, role, org, resource_type = rng.choice([
         (rng.choice(DOCTOR_IDS), "doctor", "", "CONSULTATION"),
         (rng.choice(PHARMACY_ACTOR_IDS), "org_actor", "PharmacyMSP", "PRESCRIPTION"),
@@ -246,7 +255,7 @@ def inject_broad_access_burst(days, rng):
     patients than their normal panel, in a tight window during business
     hours — data-harvesting pattern, not a timing anomaly."""
     rows = []
-    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
     doctor = rng.choice(DOCTOR_IDS)
     start_ts = business_hours_ts(base_day, rng)
     for i in range(rng.randint(20, 40)):
@@ -267,7 +276,7 @@ def inject_consent_probe_spree(days, rng):
     consent record); that one is an org_actor being denied on a
     PRESCRIPTION/LAB_REPORT resource (no active consent grant to read it)."""
     rows = []
-    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
     probing_patient = rng.choice(PATIENT_IDS)
     victim_patient = rng.choice([p for p in PATIENT_IDS if p != probing_patient])
     start_ts = business_hours_ts(base_day, rng)
@@ -289,7 +298,7 @@ def inject_cross_org_denied_no_consent(days, rng):
     feature_engineering.py's consent_denied_ratio has to look at this
     resourceType/actorOrg combination, not just resourceType='CONSENT'."""
     rows = []
-    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
     if rng.random() < 0.5:
         actor, org, resource_type = rng.choice(PHARMACY_ACTOR_IDS), "PharmacyMSP", "PRESCRIPTION"
     else:
@@ -309,7 +318,7 @@ def inject_dispense_without_read(days, rng):
     own fabricated resourceID (no matching prior READ anywhere in the
     dataset for that ID), which is exactly the violation being modeled."""
     rows = []
-    base_day = datetime(2026, 1, 1) + timedelta(days=rng.randint(3, days - 3))
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
     actor = rng.choice(PHARMACY_ACTOR_IDS)
     start_ts = business_hours_ts(base_day, rng)
     for i in range(rng.randint(6, 12)):

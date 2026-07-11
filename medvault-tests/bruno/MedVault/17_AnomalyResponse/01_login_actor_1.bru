@@ -1,0 +1,31 @@
+meta {
+  name: Login Actor 1 (owns the seeded test flags)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/auth/org-actor/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "phone": "9000000001",
+    "password": "TestPass123!"
+  }
+}
+
+tests {
+  test("status 200", function() {
+    expect(res.status).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("token returned", function() {
+    expect(res.body.token).to.be.a("string");
+    bru.setEnvVar("anomaly_actor1_token", res.body.token);
+  });
+}
