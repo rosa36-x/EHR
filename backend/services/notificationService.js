@@ -182,4 +182,12 @@ export const NotificationEvents = {
 
     TREATMENT_RELATIONSHIP_ENDED: (doctorName) =>
         `Your treatment relationship with Dr. ${doctorName} has ended. Their access to your records has been revoked.`,
+
+    ANOMALY_WARNING: (reason) =>
+        `Unusual access activity was detected on your account (${reason}). This has been logged for review. Contact support if this wasn't you.`,
+
+    ACCOUNT_SUSPENDED: (bannedUntil) =>
+        bannedUntil
+            ? `Your account has been temporarily suspended until ${bannedUntil} following repeated confirmed access violations.`
+            : `Your account has been suspended following repeated confirmed access violations. Contact your organization administrator.`,
 };

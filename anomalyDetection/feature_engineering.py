@@ -155,8 +155,14 @@ def build_actor_features(df: pd.DataFrame) -> pd.DataFrame:
             "access_denied_ratio": (n_access_denied / n_events) if n_events > 0 else 0.0,
             "consent_denied_ratio": (n_consent_denied_total / n_events) if n_events > 0 else 0.0,
             "dispense_without_read_count": int(group["dispense_violation"].sum()),
-            # eval-only, not a model input:
-            "label": "anomalous" if (group["label"] == "anomalous").any() else "normal",
+            # eval-only, not a model input. "label" only exists in synthetic
+            # data (see generate_synthetic_audit_data.py) -- real production
+            # audit data has no ground truth, so this reports "unknown"
+            # rather than crashing on a missing column.
+            "label": (
+                ("anomalous" if (group["label"] == "anomalous").any() else "normal")
+                if "label" in group.columns else "unknown"
+            ),
         })
 
     return pd.DataFrame(rows).sort_values(["date", "actorID"]).reset_index(drop=True)
@@ -194,8 +200,12 @@ def build_patient_features(df: pd.DataFrame) -> pd.DataFrame:
             "off_hours_ratio": off_hours_ratio(group["hour"]),
             "burst_count": burst_count(group["timestamp"]),
             "access_denied_ratio": (n_access_denied / n_events) if n_events > 0 else 0.0,
-            # eval-only, not a model input:
-            "label": "anomalous" if (group["label"] == "anomalous").any() else "normal",
+            # eval-only, not a model input -- see build_actor_features's
+            # comment on why this can be "unknown" for real audit data.
+            "label": (
+                ("anomalous" if (group["label"] == "anomalous").any() else "normal")
+                if "label" in group.columns else "unknown"
+            ),
         })
 
     return pd.DataFrame(rows).sort_values(["date", "patientID"]).reset_index(drop=True)

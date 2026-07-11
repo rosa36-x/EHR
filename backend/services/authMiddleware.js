@@ -1,11 +1,17 @@
 import { verifyToken } from "../services/authService.js";
 import { mspIdForOrg } from "./fabricService.js";
+import { OrgActor } from "./db.js";
 
 /**
  * Middleware to verify JWT token on protected routes.
  * Attaches decoded user payload to req.user
+ *
+ * For org_actor roles, also checks a live ban flag on every request (not
+ * just at login) — a JWT stays cryptographically valid until it expires,
+ * so a temporary ban imposed mid-session (see anomalyDetectionService.js's
+ * escalation logic) has to be enforced here, not just at the login route.
  */
-export function authenticate(req, res, next) {
+export async function authenticate(req, res, next) {
     const authHeader = req.headers["authorization"];
     const token      = authHeader && authHeader.split(" ")[1]; // Bearer <token>
 
@@ -13,13 +19,37 @@ export function authenticate(req, res, next) {
         return res.status(401).json({ status: "FAILED", message: "Access token required." });
     }
 
+    let decoded;
     try {
-        const decoded = verifyToken(token);
-        req.user = decoded;
-        next();
+        decoded = verifyToken(token);
     } catch (err) {
         return res.status(401).json({ status: "FAILED", message: "Invalid or expired token." });
     }
+    req.user = decoded;
+
+    if (decoded.role === "org_actor") {
+        try {
+            const actor = await OrgActor.findOne({ actorID: decoded.id });
+            if (actor?.isBanned) {
+                const stillBanned = !actor.bannedUntil || new Date(actor.bannedUntil) > new Date();
+                if (stillBanned) {
+                    return res.status(403).json({
+                        status:  "ACCESS_DENIED",
+                        message: actor.bannedUntil
+                            ? `Account suspended until ${actor.bannedUntil} pending review.`
+                            : "Account suspended pending review.",
+                    });
+                }
+            }
+        } catch (err) {
+            // Fails OPEN, not closed — a Mongo hiccup here must not lock out
+            // every org_actor request. Same philosophy as auditMiddleware.js:
+            // this control's own failure shouldn't become a wider outage.
+            console.error("[Auth] Ban check failed, allowing request through:", err.message);
+        }
+    }
+
+    next();
 }
 
 /**
@@ -34,6 +64,26 @@ export function authorizeRoles(...roles) {
             return res.status(403).json({
                 status:  "FAILED",
                 message: `Access denied. Required role: ${roles.join(" or ")}.`,
+            });
+        }
+        next();
+    };
+}
+
+/**
+ * Middleware to restrict access to org_actor JWTs from a specific org(s),
+ * e.g. requireOrgActorOrg("GovernanceMSP") for the anomaly-review routes.
+ * Distinct from authorizeRoles(), which only checks req.user.role — every
+ * pharmacist/lab-tech/governance-staff JWT shares role "org_actor", so
+ * restricting "Governance only" needs the org check too.
+ * Use after authenticate().
+ */
+export function requireOrgActorOrg(...orgs) {
+    return (req, res, next) => {
+        if (req.user.role !== "org_actor" || !orgs.includes(req.user.org)) {
+            return res.status(403).json({
+                status:  "FAILED",
+                message: `Access denied. Requires an org-actor account in: ${orgs.join(", ")}.`,
             });
         }
         next();

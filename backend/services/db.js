@@ -59,6 +59,12 @@ const orgActorSchema = new mongoose.Schema({
     email:        { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },
     isVerified:   { type: Boolean, default: true },
+    // Anomaly-detection enforcement fields. Escalation only ever increments
+    // violationCount on a Governance-CONFIRMED flag (routes/anomaly.js), never
+    // on a raw unreviewed ML flag — see anomalyDetectionService.js for why.
+    violationCount: { type: Number, default: 0 },
+    isBanned:       { type: Boolean, default: false },
+    bannedUntil:    { type: String, default: null }, // ISO string; null = not banned, checked in authMiddleware.authenticate
     createdAt:    { type: String },
 });
 
@@ -128,6 +134,62 @@ const emergencyAccessLogSchema = new mongoose.Schema({
     closedBy:          { type: String },
 });
 
+/**
+ * AuditLogMirror — a queryable Mongo copy of every on-chain AuditLog entry,
+ * written by auditMiddleware.logAudit() right after the chaincode call
+ * succeeds. Exists ONLY because chaincode/audit_contract.go has no range/
+ * bulk query (GetAuditLog only fetches one entry by auditID) — there is no
+ * way to ask the ledger "give me every audit log from the last 24h" without
+ * a new chaincode function, which this whole feature was scoped to avoid.
+ *
+ * The ledger entry remains the sole tamper-evident source of truth; this
+ * mirror is a read-model projection for analytics only (anomaly detection's
+ * feature pipeline), never used for access-control decisions. If this
+ * collection and the ledger ever disagree, the ledger wins — nothing here
+ * is authoritative.
+ */
+const auditLogMirrorSchema = new mongoose.Schema({
+    auditID:      { type: String, required: true, unique: true },
+    actorID:      { type: String, required: true },
+    actorRole:    { type: String, required: true },
+    actorOrg:     { type: String, default: "" },
+    action:       { type: String, required: true },
+    resourceType: { type: String, required: true },
+    resourceID:   { type: String, required: true },
+    timestamp:    { type: String, required: true },
+});
+auditLogMirrorSchema.index({ timestamp: 1 });
+auditLogMirrorSchema.index({ actorID: 1, timestamp: 1 });
+
+/**
+ * AnomalyFlag — output of the anomaly detection pipeline (Isolation Forest
+ * + LSTM combined score, SHAP explanation). The flag itself is also logged
+ * on-chain via logAudit() with actorRole "ai_engine" (see
+ * anomalyDetectionService.js) -- auditID here links back to that entry as
+ * proof the flag was actually raised then, not fabricated later. Anything
+ * beyond {score, status} is too rich/variable-shaped for the fixed
+ * AuditLog struct, which is why it lives here instead of on-chain.
+ */
+const anomalyFlagSchema = new mongoose.Schema({
+    flagID:        { type: String, required: true, unique: true },
+    actorID:       { type: String, required: true },
+    actorRole:     { type: String, required: true },
+    actorOrg:      { type: String, default: "" },
+    date:          { type: String, required: true }, // the actor-day window this flag covers
+    ifScore:       { type: Number, required: true },
+    lstmScore:     { type: Number, default: null },
+    combinedScore: { type: Number, required: true },
+    topFeatures:   { type: [mongoose.Schema.Types.Mixed], default: [] }, // SHAP output: [{feature, contribution}, ...]
+    status:        { type: String, enum: ["PENDING", "CONFIRMED", "DISMISSED"], default: "PENDING" },
+    auditID:       { type: String, required: true }, // links to the on-chain ANOMALY_FLAGGED entry
+    reviewedBy:    { type: String, default: null },   // Governance actorID
+    reviewedAt:    { type: String, default: null },
+    reviewNotes:   { type: String, default: "" },
+    createdAt:     { type: String, required: true },
+});
+anomalyFlagSchema.index({ actorID: 1, status: 1 });
+anomalyFlagSchema.index({ createdAt: 1 });
+
 // ── Models ────────────────────────────────────────────────────────────────────
 export const Doctor             = mongoose.model("Doctor",             doctorSchema);
 export const OrgActor           = mongoose.model("OrgActor",           orgActorSchema);
@@ -135,3 +197,5 @@ export const PatientAuth        = mongoose.model("PatientAuth",        patientAu
 export const OTP                = mongoose.model("OTP",                otpSchema);
 export const Notification       = mongoose.model("Notification",       notificationSchema);
 export const EmergencyAccessLog = mongoose.model("EmergencyAccessLog", emergencyAccessLogSchema);
+export const AuditLogMirror     = mongoose.model("AuditLogMirror",     auditLogMirrorSchema);
+export const AnomalyFlag        = mongoose.model("AnomalyFlag",        anomalyFlagSchema);

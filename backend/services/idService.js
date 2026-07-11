@@ -32,6 +32,7 @@ const PREFIXES = {
     treatmentRelationship: "TR",
     doctor:              "DOC",
     orgActor:            "ORG",
+    anomalyFlag:         "ANOM",
     appointment:         "APT",
 };
 
@@ -51,7 +52,25 @@ function loadStore() {
             return initial;
         }
 
-        return JSON.parse(fs.readFileSync(ID_STORE_PATH, "utf8"));
+        const store = JSON.parse(fs.readFileSync(ID_STORE_PATH, "utf8"));
+
+        // Backfill: PREFIXES can grow over time (new asset types added
+        // after this file already existed on disk). Without this, a
+        // missing key reads as `undefined`, and undefined++ -> NaN ->
+        // JSON.stringify silently turns that into `null` on save, which
+        // then reads back as the literal string "null" in the next ID
+        // (see anomalyFlag/"ANOMnull" incident). Backfill instead of
+        // letting that arithmetic happen at all.
+        let changed = false;
+        for (const key of Object.keys(PREFIXES)) {
+            if (typeof store[key] !== "number" || !Number.isFinite(store[key])) {
+                store[key] = 1;
+                changed = true;
+            }
+        }
+        if (changed) saveStore(store);
+
+        return store;
     } catch (err) {
         console.error("[IDService] Failed to load ID store:", err);
         throw err;

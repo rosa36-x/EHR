@@ -20,6 +20,7 @@ import emergencyRoutes          from "./routes/emergency.js";
 import permissionRequestRoutes  from "./routes/permissionRequest.js";
 import treatmentRelationshipRoutes from "./routes/treatmentRelationship.js";
 import auditHistoryRoutes       from "./routes/auditHistory.js";
+import anomalyRoutes            from "./routes/anomaly.js";
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use("/emergency-access",       emergencyRoutes);
 app.use("/permission-requests",    permissionRequestRoutes);
 app.use("/treatment-relationships",treatmentRelationshipRoutes);
 app.use("/audit-history",          auditHistoryRoutes);
+app.use("/anomalies",              anomalyRoutes);
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT ?? 5000;

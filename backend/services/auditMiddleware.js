@@ -1,5 +1,6 @@
 import { getContract } from "./fabricService.js";
 import { generateID } from "./idService.js";
+import { AuditLogMirror } from "./db.js";
 
 /**
  * Audit Middleware
@@ -32,13 +33,16 @@ import { generateID } from "./idService.js";
  *                                        through (e.g. "PharmacyMSP"), for
  *                                        cross-org access. Defaults to "" —
  *                                        existing callers are unaffected.
+ * @returns {Promise<string|null>} the generated auditID on success, or null
+ *   if the chaincode write failed (audit failures never throw — callers
+ *   that need to link something to this entry, e.g. anomalyDetectionService,
+ *   should treat null as "couldn't establish an on-chain link this time").
  */
 export async function logAudit({ actorID, actorRole, action, resourceType, resourceID, actorOrg = "" }) {
     let gateway, client;
+    const auditID   = generateID("audit");
+    const timestamp = new Date().toISOString();
     try {
-        const auditID   = generateID("audit");
-        const timestamp = new Date().toISOString();
-
         const result = await getContract("governance");
         gateway = result.gateway;
         client  = result.client;
@@ -55,9 +59,24 @@ export async function logAudit({ actorID, actorRole, action, resourceType, resou
             timestamp,
             actorOrg
         );
+
+        // Best-effort Mongo mirror — see AuditLogMirror's schema comment in
+        // db.js for why this exists (chaincode has no bulk/range query).
+        // The ledger write above already succeeded; a mirror failure here
+        // must never be treated as an audit failure.
+        try {
+            await new AuditLogMirror({
+                auditID, actorID, actorRole, actorOrg, action, resourceType, resourceID, timestamp,
+            }).save();
+        } catch (mirrorErr) {
+            console.error("[Audit] Failed to write AuditLogMirror (ledger write still succeeded):", mirrorErr.message);
+        }
+
+        return auditID;
     } catch (err) {
         // Audit failures must never crash the main flow
         console.error("[Audit] Failed to log audit event:", err.message);
+        return null;
     } finally {
         if (gateway) await gateway.close();
         if (client)  client.close();

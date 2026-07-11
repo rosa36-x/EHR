@@ -123,3 +123,12 @@ anomalyDetection/synthetic_audit_log.csv
 anomalyDetection/features.csv
 anomalyDetection/lstm_scored_actor_days.csv
 anomalyDetection/.~lock.*#
+anomalyDetection/.venv/
+anomalyDetection/venv/
+anomalyDetection/env/
+anomalyDetection/runs/
+anomalyDetection/.coverage
+anomalyDetection/htmlcov/
+data/
+anomalyDetection/*.csv
+anomalyDetection/*.json
