@@ -133,3 +133,7 @@ data/
 anomalyDetection/*.csv
 anomalyDetection/*.json
 anomalyDetection/figures/
+anomalyDetection/detection_metrics.json
+anomalyDetection/lstm_loss.csv
+storage_overhead.json
+sample_docs/
