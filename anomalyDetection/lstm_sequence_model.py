@@ -98,10 +98,15 @@ class NextEventLSTM(nn.Module):
 
 
 def train(model, sequences, token_to_id, epochs=25, lr=1e-2):
+    """Returns per-epoch avg loss as a list -- purely additive: existing
+    callers that ignore the return value are unaffected. Added so
+    generate_paper_figures.py can plot a real training loss curve instead
+    of re-deriving it from stdout."""
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
     start_id = token_to_id[START_TOKEN]
 
+    loss_history = []
     actor_ids = [a for a, s in sequences.items() if len(s) >= 2]
     for epoch in range(epochs):
         total_loss, n_batches = 0.0, 0
@@ -118,7 +123,10 @@ def train(model, sequences, token_to_id, epochs=25, lr=1e-2):
             opt.step()
             total_loss += loss.item()
             n_batches += 1
-        print(f"  epoch {epoch+1}/{epochs} — avg loss {total_loss / n_batches:.3f}")
+        avg_loss = total_loss / n_batches
+        loss_history.append(avg_loss)
+        print(f"  epoch {epoch+1}/{epochs} — avg loss {avg_loss:.3f}")
+    return loss_history
 
 
 @torch.no_grad()
@@ -194,6 +202,8 @@ def main():
     parser.add_argument("--out", default="lstm_scored_actor_days.csv")
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--top-n", type=int, default=10)
+    parser.add_argument("--loss-out", default=None,
+                         help="optional path to write per-epoch avg loss as CSV (epoch,avg_loss)")
     args = parser.parse_args()
 
     df = pd.read_csv(args.infile)
@@ -206,7 +216,12 @@ def main():
 
     model = NextEventLSTM(vocab_size=len(token_to_id))
     print("Training (unsupervised next-event prediction, no labels used)...")
-    train(model, sequences, token_to_id, epochs=args.epochs)
+    loss_history = train(model, sequences, token_to_id, epochs=args.epochs)
+
+    if args.loss_out:
+        pd.DataFrame({"epoch": range(1, len(loss_history) + 1), "avg_loss": loss_history}) \
+            .to_csv(args.loss_out, index=False)
+        print(f"Wrote loss history to {args.loss_out}")
 
     print("\nScoring...")
     event_scores = score_sequences(model, sequences, token_to_id)

@@ -21,6 +21,7 @@ import permissionRequestRoutes  from "./routes/permissionRequest.js";
 import treatmentRelationshipRoutes from "./routes/treatmentRelationship.js";
 import auditHistoryRoutes       from "./routes/auditHistory.js";
 import anomalyRoutes            from "./routes/anomaly.js";
+import anomalyResponseRoutes    from "./routes/anomalyResponse.js";
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/emergency-access",       emergencyRoutes);
 app.use("/permission-requests",    permissionRequestRoutes);
 app.use("/treatment-relationships",treatmentRelationshipRoutes);
 app.use("/audit-history",          auditHistoryRoutes);
+app.use("/anomalies",              anomalyResponseRoutes); // must precede anomalyRoutes -- see routes/anomalyResponse.js
 app.use("/anomalies",              anomalyRoutes);
 
 // ── Startup ───────────────────────────────────────────────────────────────────

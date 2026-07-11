@@ -186,6 +186,12 @@ export const NotificationEvents = {
     ANOMALY_WARNING: (reason) =>
         `Unusual access activity was detected on your account (${reason}). This has been logged for review. Contact support if this wasn't you.`,
 
+    // Violations 1-2 only (see anomalyDetectionService.js) -- gives the
+    // actor a flagID and a chance to explain (e.g. legitimate off-hour
+    // access) via POST /anomalies/:id/respond before Governance reviews it.
+    ANOMALY_CLARIFICATION_REQUEST: (reason, flagID) =>
+        `Unusual access activity was detected on your account (${reason}). If this was legitimate (e.g. an authorized off-hour access), please explain via your MedVault portal referencing flag ${flagID}. Unexplained repeat flags may lead to account review.`,
+
     ACCOUNT_SUSPENDED: (bannedUntil) =>
         bannedUntil
             ? `Your account has been temporarily suspended until ${bannedUntil} following repeated confirmed access violations.`

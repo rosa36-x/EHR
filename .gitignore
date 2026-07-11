@@ -132,3 +132,4 @@ anomalyDetection/htmlcov/
 data/
 anomalyDetection/*.csv
 anomalyDetection/*.json
+anomalyDetection/figures/

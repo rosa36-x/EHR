@@ -90,3 +90,31 @@ labeled anomalies (rapid cross-org bursts, midnight access spikes, one
 actor touching many patients in a short window) to get a usable
 training/eval set before the Isolation Forest / LSTM work can be evaluated
 meaningfully.
+
+## Current Status
+
+**Implemented:**
+- `point` and `emergency_abuse` classification on `AnomalyFlag` (see
+  `classifyFlag()` in `anomalyDetectionService.js` -- cross-checks
+  `EmergencyAccessLog`, no chaincode changes).
+- Clarification-request loop for an actor's 1st/2nd flag ever
+  (`clarificationRequested`/`clarificationText` fields, actor-facing
+  `POST /anomalies/:id/respond` in `routes/anomalyResponse.js`).
+- Standalone paper figures (`generate_paper_figures.py`): score
+  distribution, feature importance, PR/ROC, LSTM loss curve.
+
+**Deferred / not built:**
+- `sequential` classification (LSTM session model) -- excluded from the
+  live worker; empirically underperformed IF-alone in testing so far, and
+  needs more real production volume before retraining per-cycle is worth
+  the added latency. `lstm_sequence_model.py` still exists standalone for
+  offline eval/figures.
+- `ai_entity` classification (rogue/compromised AI model actor) -- no
+  AI-model-as-registered-actor identity exists in the system yet
+  (ResearchMSP is still a skeleton org). Needs that identity model built
+  first before purpose-mismatch/query-rate detection is meaningful.
+- Real-time Fabric block-event subscription -- worker stays poll-based
+  (`ANOMALY_INTERVAL_MINUTES`); detection is windowed (actor-day) regardless
+  of ingestion latency, so this buys latency, not new detection capability.
+- Frontend charts consuming `GET /anomalies/summary` -- backend endpoint
+  is ready, UI not built.

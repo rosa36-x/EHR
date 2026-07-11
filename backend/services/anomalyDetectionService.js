@@ -4,7 +4,7 @@ import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
 
-import { AuditLogMirror, AnomalyFlag, OrgActor, Doctor, PatientAuth } from "./db.js";
+import { AuditLogMirror, AnomalyFlag, OrgActor, Doctor, PatientAuth, EmergencyAccessLog } from "./db.js";
 import { logAudit } from "./auditMiddleware.js";
 import { notify, NotificationEvents, sendEmail } from "./notificationService.js";
 import { generateID } from "./idService.js";
@@ -44,6 +44,14 @@ const FLAG_THRESHOLD = Number(process.env.ANOMALY_FLAG_THRESHOLD ?? 0.15);
 const BAN_THRESHOLD_CONFIRMED_FLAGS = Number(process.env.ANOMALY_BAN_THRESHOLD ?? 3);
 const BAN_DURATION_DAYS = Number(process.env.ANOMALY_BAN_DURATION_DAYS ?? 7);
 const COMPLIANCE_REPORT_EMAIL = process.env.COMPLIANCE_REPORT_EMAIL ?? "compliance@medvault.local";
+
+// Violations 1-2 (this actor's 1st/2nd AnomalyFlag ever, any status) get a
+// clarification request instead of just a warning. Counted against ALL
+// flags (not just CONFIRMED) because this happens at creation time, before
+// any human review -- it's "give them a chance to explain" not "punish
+// them", so it's deliberately not gated on CONFIRMED the way the ban logic
+// in reviewFlag() is.
+const CLARIFICATION_FLAG_COUNT = Number(process.env.ANOMALY_CLARIFICATION_FLAG_COUNT ?? 2);
 
 // ── CSV I/O (no new dependency -- fixed, known columns) ─────────────────────
 
@@ -102,7 +110,40 @@ async function resolveActorContact(actorID, actorRole) {
     return null;
 }
 
-// ── Detection cycle ───────────────────────────────────────────────────────────
+// ── Classification ─────────────────────────────────────────────────
+
+/**
+ * Adversary 4 (Emergency Abuse) cross-check. "point" is the default for
+ * every flag; this only upgrades it to "emergency_abuse" when the flagged
+ * actor had an emergency-access episode overlapping the flagged actor-day.
+ * A flag only exists here because the IF score already crossed
+ * FLAG_THRESHOLD -- this doesn't add new detection sensitivity, it labels
+ * *why* an already-anomalous day matters more: an anomalous access pattern
+ * that happened to fall inside a self-declared "emergency" is exactly the
+ * pattern-vs-declared-reason mismatch the spec's Adversary 4 describes, and
+ * deserves priority Governance attention over a plain "point" anomaly.
+ *
+ * Pure Mongo read against EmergencyAccessLog (the existing app-layer mirror
+ * -- see db.js) -- no chaincode changes, no new Fabric calls.
+ */
+async function classifyFlag(actorID, date) {
+    const dayStart = new Date(`${date}T00:00:00.000Z`);
+    const dayEnd   = new Date(`${date}T23:59:59.999Z`);
+
+    const overlapping = await EmergencyAccessLog.findOne({
+        doctorID:  actorID,
+        createdAt: { $lte: dayEnd.toISOString() },
+        $or: [
+            { closedAt: null },
+            { closedAt: { $gte: dayStart.toISOString() } },
+            { expiresAt: { $gte: dayStart.toISOString() } },
+        ],
+    }).lean();
+
+    return overlapping ? "emergency_abuse" : "point";
+}
+
+// ── Detection cycle ────────────────────────────────────────────────────────────
 
 /**
  * Pulls the last SCAN_WINDOW_HOURS of AuditLogMirror data, runs it through
@@ -190,6 +231,14 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
                 actorOrg,
             });
 
+            const classification = await classifyFlag(row.actorID, row.date);
+
+            // Violations 1-2: this actor's Nth flag overall (any status),
+            // counted BEFORE this one is saved. See CLARIFICATION_FLAG_COUNT
+            // doc comment for why this isn't gated on CONFIRMED.
+            const priorFlagCount = await AnomalyFlag.countDocuments({ actorID: row.actorID });
+            const clarificationRequested = priorFlagCount < CLARIFICATION_FLAG_COUNT;
+
             await new AnomalyFlag({
                 flagID,
                 actorID: row.actorID,
@@ -200,8 +249,10 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
                 lstmScore: null,
                 combinedScore: score,
                 topFeatures,
+                classification,
                 status: "PENDING",
                 auditID: auditID ?? "",
+                clarificationRequested,
                 createdAt,
             }).save();
 
@@ -210,13 +261,16 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
             const contact = await resolveActorContact(row.actorID, actorRole);
             if (contact) {
                 const reason = topFeatures.map((f) => f.feature).join(", ") || "unusual access pattern";
+                const message = clarificationRequested
+                    ? NotificationEvents.ANOMALY_CLARIFICATION_REQUEST(reason, flagID)
+                    : NotificationEvents.ANOMALY_WARNING(reason);
                 await notify({
                     recipientID:   row.actorID,
                     recipientRole: actorRole,
                     phone:         contact.phone,
                     email:         contact.email,
-                    event:         "ANOMALY_WARNING",
-                    message:       NotificationEvents.ANOMALY_WARNING(reason),
+                    event:         clarificationRequested ? "ANOMALY_CLARIFICATION_REQUEST" : "ANOMALY_WARNING",
+                    message,
                     channel:       contact.email ? "both" : "sms",
                 });
             }

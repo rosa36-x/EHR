@@ -180,11 +180,27 @@ const anomalyFlagSchema = new mongoose.Schema({
     lstmScore:     { type: Number, default: null },
     combinedScore: { type: Number, required: true },
     topFeatures:   { type: [mongoose.Schema.Types.Mixed], default: [] }, // SHAP output: [{feature, contribution}, ...]
+    // Classification taxonomy (see AI_MODEL_ROADMAP.md for the full 4-type
+    // spec). Only "point" and "emergency_abuse" are actually detected today.
+    // "sequential" (LSTM session model) and "ai_entity" (rogue/compromised
+    // AI-model actor) are documented future work, not scored here -- see
+    // roadmap for why (undertrained LSTM on live volume; no AI-model actor
+    // identity exists in the system yet).
+    classification: { type: String, enum: ["point", "emergency_abuse"], default: "point" },
     status:        { type: String, enum: ["PENDING", "CONFIRMED", "DISMISSED"], default: "PENDING" },
     auditID:       { type: String, required: true }, // links to the on-chain ANOMALY_FLAGGED entry
     reviewedBy:    { type: String, default: null },   // Governance actorID
     reviewedAt:    { type: String, default: null },
     reviewNotes:   { type: String, default: "" },
+    // Violations 1-2 clarification loop: set at flag-creation time (see
+    // anomalyDetectionService.js) when this is the actor's 1st/2nd flag ever.
+    // The flagged actor themselves can fill clarificationText in via
+    // POST /anomalies/:id/respond (routes/anomalyResponse.js) BEFORE
+    // Governance reviews it -- gives "legitimate off-hour access"-style
+    // context a chance to surface before a human confirms/dismisses.
+    clarificationRequested:    { type: Boolean, default: false },
+    clarificationText:        { type: String, default: "" },
+    clarificationSubmittedAt: { type: String, default: null },
     createdAt:     { type: String, required: true },
 });
 anomalyFlagSchema.index({ actorID: 1, status: 1 });
