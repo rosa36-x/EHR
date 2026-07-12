@@ -147,4 +147,6 @@ config.json
 modified_config.json
 
 registerEnroll.sh
-caliper-benchmarks/run.log
+caliper-benchmarks/run.logmedvault-frontend/node_modules
+medvault-frontend/.env
+medvault-frontend/.output

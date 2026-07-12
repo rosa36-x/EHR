@@ -181,6 +181,9 @@ export async function verifyDoctorOTP(phone, otp) {
  * Register patient auth record after Fabric registration.
  * Called internally from patient registration flow.
  */
+export function generatePatientAuthToken(patientID) {
+    return generateToken({ id: patientID, role: "patient" }, PATIENT_JWT_EXP);
+}
 export async function registerPatientAuth(patientID, phone, aadhaarHash) {
     try {
         const existing = await PatientAuth.findOne({ phone });

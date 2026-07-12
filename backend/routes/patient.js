@@ -3,7 +3,7 @@ import express from "express";
 import * as uidaiService from "../services/uidaiService.js";
 import * as patientFabricService from "../services/patientFabricService.js";
 import { authenticate } from "../services/authMiddleware.js";
-
+import { generatePatientAuthToken } from "../services/authService.js";
 const router = express.Router();
 
 /**
@@ -100,25 +100,16 @@ router.post("/complete-registration", async (req, res) => {
     }
 
     return res.json({
-
         status: "SUCCESS",
-
         message: "Patient registered successfully.",
-
+        token: generatePatientAuthToken(fabricResult.patientID),
         patient: {
-
             patientID: fabricResult.patientID,
-
             fullName,
-
             aadhaarVID: fabricResult.aadhaarVID,
-
             aadhaarToken: fabricResult.aadhaarToken,
-
             registeredAt: timestamp
-
         }
-
     });
 
 });
