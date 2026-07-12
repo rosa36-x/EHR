@@ -137,3 +137,9 @@ anomalyDetection/detection_metrics.json
 anomalyDetection/lstm_loss.csv
 storage_overhead.json
 sample_docs/
+caliper-benchmarks/networkconfig.yaml
+caliper-benchmarks/connection-profiles/
+caliper-benchmarks/node_modules/
+caliper-benchmarks/report.html
+caliper-benchmarks/package-lock.json 
+caliper-benchmarks/package.json

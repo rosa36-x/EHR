@@ -1,0 +1,125 @@
+# caliper-benchmarks/benchmark-config.yaml
+#
+# Runs each workload at 10 / 50 / 100 TPS (fixed-rate) for a fixed
+# transaction count per round -- standard "TPS sweep" shape reviewers expect. 
+
+test:
+  name: MedVault-X Chaincode Benchmark
+  description: >
+    Throughput/latency benchmark for representative MedVault-X chaincode
+    operations (one read, two writes) across a TPS sweep.
+  workers:
+    number: 2
+  rounds:
+    - label: check_treatment_relationship_10tps
+      txNumber: 200
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 10
+      workload:
+        module: ./workloads/checkTreatmentRelationship.js
+
+    - label: check_treatment_relationship_50tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 50
+      workload:
+        module: ./workloads/checkTreatmentRelationship.js
+
+    - label: check_treatment_relationship_100tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 100
+      workload:
+        module: ./workloads/checkTreatmentRelationship.js
+
+    - label: create_treatment_relationship_10tps
+      txNumber: 100
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 10
+      workload:
+        module: ./workloads/createTreatmentRelationship.js
+
+    - label: create_treatment_relationship_50tps
+      txNumber: 300
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 50
+      workload:
+        module: ./workloads/createTreatmentRelationship.js
+
+    - label: create_treatment_relationship_100tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 100
+      workload:
+        module: ./workloads/createTreatmentRelationship.js
+
+    - label: create_consultation_10tps
+      txNumber: 100
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 10
+      workload:
+        module: ./workloads/createConsultation.js
+
+    - label: create_consultation_50tps
+      txNumber: 300
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 50
+      workload:
+        module: ./workloads/createConsultation.js
+
+    - label: create_consultation_100tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 100
+      workload:
+        module: ./workloads/createConsultation.js
+
+    - label: check_active_consent_10tps
+      txNumber: 200
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 10
+      workload:
+        module: ./workloads/checkActiveConsent.js
+
+    - label: check_active_consent_50tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 50
+      workload:
+        module: ./workloads/checkActiveConsent.js
+
+    - label: check_active_consent_100tps
+      txNumber: 500
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 100
+      workload:
+        module: ./workloads/checkActiveConsent.js
+
+# No resource monitors configured -- optional in Caliper, and each extra
+# module is another thing that can misconfigure. Core TPS/latency/success
+# results don't need it. Add a "monitors:" section back later if you want
+# CPU/memory figures too.
