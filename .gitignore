@@ -147,3 +147,4 @@ config.json
 modified_config.json
 
 registerEnroll.sh
+caliper-benchmarks/run.log

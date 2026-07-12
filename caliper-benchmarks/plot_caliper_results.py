@@ -2,20 +2,14 @@
 plot_caliper_results.py
 
 Standalone script -- parses Caliper's default report.html "Summary of
-performance metrics" table (the one in your screenshot: Name, Succ, Fail,
-Send Rate (TPS), Max/Min/Avg Latency (s), Throughput (TPS)) and produces
-two PNG charts for the paper:
-  - send_rate_vs_throughput.png -- does throughput keep pace with the
-    requested send rate, per operation
-  - send_rate_vs_latency.png    -- avg latency (with min/max as an error
-    band) vs send rate, per operation
+performance metrics" table and produces publication-quality charts for
+the paper:
+  - send_rate_vs_throughput.png / .pdf
+  - send_rate_vs_latency.png / .pdf
 
-Round labels are expected in the "<operation>_<N>tps" pattern this
-project's benchmark-config.yaml already uses (e.g.
-"check_active_consent_50tps") -- the trailing "_Ntps" is stripped to group
-rounds by operation for the per-operation lines. Rounds that don't match
-this pattern are grouped under their full name unchanged (still
-plotted, just without TPS-based grouping).
+PNG at 300 DPI for slides/screen; PDF is vector (scales cleanly in LaTeX,
+no resolution loss at print size) -- use the PDF for the actual
+camera-ready submission if your template accepts vector figures.
 
 Usage:
     python plot_caliper_results.py --report report.html --out-dir figures/
@@ -30,8 +24,34 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+plt.rcParams.update({
+    "font.size": 12,
+    "axes.titlesize": 14,
+    "axes.labelsize": 13,
+    "legend.fontsize": 10.5,
+    "xtick.labelsize": 11,
+    "ytick.labelsize": 11,
+    "axes.grid": True,
+    "grid.alpha": 0.3,
+    "grid.linestyle": "--",
+    "figure.dpi": 100,  # on-screen only; savefig dpi set explicitly below
+})
+
+DPI = 300
 
 ROUND_LABEL_RE = re.compile(r"^(.*)_(\d+)tps$")
+
+# Distinct marker + linestyle per operation so overlapping lines (e.g. two
+# reads with near-identical values) stay visually distinguishable even in
+# black-and-white print, not just on-screen color.
+STYLE_CYCLE = [
+    {"marker": "o", "linestyle": "-"},
+    {"marker": "s", "linestyle": "--"},
+    {"marker": "^", "linestyle": "-."},
+    {"marker": "D", "linestyle": ":"},
+    {"marker": "v", "linestyle": "-"},
+    {"marker": "P", "linestyle": "--"},
+]
 
 
 def load_summary_table(report_path):
@@ -55,44 +75,60 @@ def split_operation_and_tier(name):
     return name, None
 
 
-def plot_send_rate_vs_throughput(df, out_path):
+def save_fig(fig, out_dir, basename):
+    png_path = os.path.join(out_dir, f"{basename}.png")
+    pdf_path = os.path.join(out_dir, f"{basename}.pdf")
+    fig.savefig(png_path, dpi=DPI, bbox_inches="tight")
+    fig.savefig(pdf_path, bbox_inches="tight")
+    print(f"Wrote {png_path}")
+    print(f"Wrote {pdf_path}")
+
+
+def plot_send_rate_vs_throughput(df, out_dir):
     fig, ax = plt.subplots(figsize=(7, 5))
-    for op, group in df.groupby("operation"):
+    for i, (op, group) in enumerate(df.groupby("operation")):
         group = group.sort_values("Send Rate (TPS)")
-        ax.plot(group["Send Rate (TPS)"], group["Throughput (TPS)"], marker="o", label=op)
+        style = STYLE_CYCLE[i % len(STYLE_CYCLE)]
+        ax.plot(
+            group["Send Rate (TPS)"], group["Throughput (TPS)"],
+            label=op.replace("_", " "), markersize=7, linewidth=2, alpha=0.85, **style,
+        )
 
     lims = [0, max(df["Send Rate (TPS)"].max(), df["Throughput (TPS)"].max()) * 1.05]
-    ax.plot(lims, lims, linestyle="--", color="gray", linewidth=1, label="ideal (throughput = send rate)")
+    ax.plot(lims, lims, linestyle=(0, (1, 1)), color="gray", linewidth=1.2,
+             label="ideal (throughput = send rate)")
     ax.set_xlabel("Send rate (TPS)")
     ax.set_ylabel("Achieved throughput (TPS)")
     ax.set_title("Send rate vs. achieved throughput")
-    ax.legend(fontsize=8)
+    ax.legend(loc="upper left", frameon=True, framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    save_fig(fig, out_dir, "send_rate_vs_throughput")
     plt.close(fig)
-    print(f"Wrote {out_path}")
 
 
-def plot_send_rate_vs_latency(df, out_path):
+def plot_send_rate_vs_latency(df, out_dir):
     fig, ax = plt.subplots(figsize=(7, 5))
-    for op, group in df.groupby("operation"):
+    for i, (op, group) in enumerate(df.groupby("operation")):
         group = group.sort_values("Send Rate (TPS)")
-        ax.plot(group["Send Rate (TPS)"], group["Avg Latency (s)"], marker="o", label=op)
+        style = STYLE_CYCLE[i % len(STYLE_CYCLE)]
+        line, = ax.plot(
+            group["Send Rate (TPS)"], group["Avg Latency (s)"],
+            label=op.replace("_", " "), markersize=7, linewidth=2, **style,
+        )
         ax.fill_between(
             group["Send Rate (TPS)"],
             group["Min Latency (s)"],
             group["Max Latency (s)"],
-            alpha=0.15,
+            alpha=0.12, color=line.get_color(),
         )
 
     ax.set_xlabel("Send rate (TPS)")
-    ax.set_ylabel("Latency (s) -- line = avg, shaded band = min/max")
+    ax.set_ylabel("Latency (s)  [line = avg, band = min/max]")
     ax.set_title("Send rate vs. latency")
-    ax.legend(fontsize=8)
+    ax.legend(loc="upper left", frameon=True, framealpha=0.9)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    save_fig(fig, out_dir, "send_rate_vs_latency")
     plt.close(fig)
-    print(f"Wrote {out_path}")
 
 
 def main():
@@ -108,10 +144,10 @@ def main():
         lambda n: pd.Series(split_operation_and_tier(n))
     )
 
-    plot_send_rate_vs_throughput(df, os.path.join(args.out_dir, "send_rate_vs_throughput.png"))
-    plot_send_rate_vs_latency(df, os.path.join(args.out_dir, "send_rate_vs_latency.png"))
+    plot_send_rate_vs_throughput(df, args.out_dir)
+    plot_send_rate_vs_latency(df, args.out_dir)
 
-    print(f"\nDone. Figures in {args.out_dir}/")
+    print(f"\nDone. Figures in {args.out_dir}/ (PNG @ {DPI} DPI + vector PDF)")
 
 
 if __name__ == "__main__":
