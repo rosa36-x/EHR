@@ -20,6 +20,4 @@ npx caliper launch manager \
 ```
 
 Output: an HTML report (`report.html`) with TPS/latency/success-rate per
-round — that's your throughput/latency figure for the paper. If any round
-fails outright, the error log tells you which of the fixes above is still
-needed.
+round. 
