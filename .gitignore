@@ -145,3 +145,5 @@ caliper-benchmarks/package-lock.json
 caliper-benchmarks/package.json
 config.json
 modified_config.json
+
+registerEnroll.sh
