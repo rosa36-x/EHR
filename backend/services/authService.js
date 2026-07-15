@@ -84,7 +84,7 @@ export async function registerDoctor(data) {
  */
 export async function loginDoctorPassword(phone, password) {
     try {
-        const doctor = await Doctor.findOne({ phone });
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
 
         if (!doctor) {
             return { status: "FAILED", message: "Doctor not found" };
@@ -118,8 +118,7 @@ export async function loginDoctorPassword(phone, password) {
  */
 export async function initiateDoctorOTP(phone) {
     try {
-        const doctor = await Doctor.findOne({ phone });
-
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
         if (!doctor) {
             return { status: "FAILED", message: "Doctor not found" };
         }
@@ -156,7 +155,7 @@ export async function verifyDoctorOTP(phone, otp) {
 
         await OTP.deleteMany({ phone, role: "doctor" });
 
-        const doctor = await Doctor.findOne({ phone });
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
 
         const token = generateToken(
             {
