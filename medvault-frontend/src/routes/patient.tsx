@@ -48,7 +48,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { getSession } from "@/lib/session";
-import { patientApi, type PatientRecord } from "@/lib/api";
+import { patientApi, consentApi, permissionRequestApi, ApiError, type PatientRecord } from "@/lib/api";
 import {
   mockAudit,
   mockConsents,
@@ -60,7 +60,6 @@ import {
   type Consent,
 } from "@/lib/mock-data";
 import { toast } from "sonner";
-import { consentApi, ApiError } from "@/lib/api";
 
 export const Route = createFileRoute("/patient")({
   head: () => ({
@@ -105,9 +104,15 @@ function PatientDashboard() {
     }
     setSess(s);
     if (s.id) {
-      patientApi.get(s.id).then((res) => {
-        if (res.status === "SUCCESS") setProfile(res.data);
-      }).catch(() => {});
+      patientApi
+        .get(s.id)
+        .then((res) => {
+          if (res.status === "SUCCESS") setProfile(res.data);
+        })
+        .catch(() => {
+          // profile fetch failing shouldn't block the rest of the dashboard;
+          // header/profile sections just fall back to session values below
+        });
     }
   }, [navigate]);
 
@@ -119,12 +124,29 @@ function PatientDashboard() {
   const displayName = profile?.fullName ?? session.name;
 
   return (
-    <DashboardShell roleLabel="Patient" userName={displayName} navItems={NAV} activeId={tab} onNavigate={setTab}>
-      {tab === "overview" && <Overview name={displayName} permissions={permissions} consents={consents} onGoto={setTab} />}
+    <DashboardShell
+      roleLabel="Patient"
+      userName={displayName}
+      navItems={NAV}
+      activeId={tab}
+      onNavigate={setTab}
+    >
+      {tab === "overview" && (
+        <Overview
+          name={displayName}
+          permissions={permissions}
+          consents={consents}
+          onGoto={setTab}
+        />
+      )}
       {tab === "profile" && <Profile session={session} profile={profile} />}
       {tab === "records" && <Records />}
-      {tab === "permissions" && <Permissions items={permissions} setItems={setPermissions} />}
-      {tab === "consents" && <Consents items={consents} setItems={setConsents} patientID={session.id!} />}
+      {tab === "permissions" && (
+        <Permissions items={permissions} setItems={setPermissions} />
+      )}
+      {tab === "consents" && (
+        <Consents items={consents} setItems={setConsents} patientID={session.id!} />
+      )}
       {tab === "relationships" && <Relationships />}
       {tab === "audit" && <AuditView />}
     </DashboardShell>
@@ -208,7 +230,13 @@ function QuickStat({
   );
 }
 
-function Profile({ session, profile }: { session: NonNullable<ReturnType<typeof getSession>>; profile: PatientRecord | null }) {
+function Profile({
+  session,
+  profile,
+}: {
+  session: NonNullable<ReturnType<typeof getSession>>;
+  profile: PatientRecord | null;
+}) {
   const fields = [
     { label: "Name", value: profile?.fullName ?? "Loading…" },
     { label: "Date of birth", value: profile?.dob ?? "Loading…" },
@@ -294,12 +322,48 @@ function Permissions({
   const update = (id: string, patch: Partial<PermissionRequest>) => {
     setItems(items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   };
+  const [lookupID, setLookupID] = useState("");
+  const [realIDs, setRealIDs] = useState<Set<string>>(new Set());
+
+  const lookup = async () => {
+    if (!lookupID) return;
+    try {
+      const res: any = await permissionRequestApi.get(lookupID);
+      const d = res.data;
+      setItems([
+        {
+          id: d.requestID,
+          doctorName: d.doctorID,
+          hospital: "",
+          resourceType: d.resourceType,
+          resourceTitle: d.resourceID,
+          reason: d.reason,
+          status: d.status,
+          expiresInHours: 24,
+          requestedAt: d.createdAt,
+        },
+        ...items.filter((i) => i.id !== d.requestID),
+      ]);
+      setRealIDs((s) => new Set(s).add(d.requestID));
+      toast.success("Request loaded");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Request not found");
+    }
+  };
   return (
     <div className="space-y-4">
       <SectionHeader
         title="Permission requests"
         subtitle="Doctors requesting access to your sensitive records. Approvals grant a 48-hour window."
       />
+      <div className="flex gap-2">
+        <Input
+          placeholder="Look up request by ID (e.g. PREQ0003)"
+          value={lookupID}
+          onChange={(e) => setLookupID(e.target.value)}
+        />
+        <Button onClick={lookup}>Load</Button>
+      </div>
       <div className="space-y-3">
         {items.map((p) => (
           <div key={p.id} className="rounded-lg border bg-card p-5 shadow-sm">
@@ -340,9 +404,19 @@ function Permissions({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    update(p.id, { status: "REJECTED" });
-                    toast.info("Request rejected");
+                  onClick={async () => {
+                    if (realIDs.has(p.id)) {
+                      try {
+                        await permissionRequestApi.reject(p.id);
+                        update(p.id, { status: "REJECTED" });
+                        toast.info("Request rejected");
+                      } catch (err) {
+                        toast.error(err instanceof ApiError ? err.message : "Couldn't reject");
+                      }
+                    } else {
+                      update(p.id, { status: "REJECTED" });
+                      toast.info("Request rejected");
+                    }
                   }}
                 >
                   <XCircle className="h-4 w-4" />
@@ -350,12 +424,22 @@ function Permissions({
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => {
-                    update(p.id, {
-                      status: "APPROVED",
-                      windowHoursRemaining: 48,
-                    });
-                    toast.success("Access granted for 48 hours");
+                  onClick={async () => {
+                    if (realIDs.has(p.id)) {
+                      try {
+                        await permissionRequestApi.approve(p.id);
+                        update(p.id, { status: "APPROVED", windowHoursRemaining: 48 });
+                        toast.success("Access granted for 48 hours");
+                      } catch (err) {
+                        toast.error(err instanceof ApiError ? err.message : "Couldn't approve");
+                      }
+                    } else {
+                      update(p.id, {
+                        status: "APPROVED",
+                        windowHoursRemaining: 48,
+                      });
+                      toast.success("Access granted for 48 hours");
+                    }
                   }}
                 >
                   <CheckCircle2 className="h-4 w-4" />
@@ -371,7 +455,15 @@ function Permissions({
   );
 }
 
-function Consents({ items, setItems, patientID }: { items: Consent[]; setItems: (i: Consent[]) => void; patientID: string }) {
+function Consents({
+  items,
+  setItems,
+  patientID,
+}: {
+  items: Consent[];
+  setItems: (i: Consent[]) => void;
+  patientID: string;
+}) {
   const [open, setOpen] = useState(false);
   const [newOrg, setNewOrg] = useState<"Pharmacy" | "Laboratory">("Pharmacy");
   const [newType, setNewType] = useState<RecordType>("PRESCRIPTION");
@@ -397,7 +489,10 @@ function Consents({ items, setItems, patientID }: { items: Consent[]; setItems: 
               className="space-y-3"
               onSubmit={async (e) => {
                 e.preventDefault();
-                if (!expiry) { toast.error("Choose an expiry date"); return; }
+                if (!expiry) {
+                  toast.error("Choose an expiry date");
+                  return;
+                }
                 setLoading(true);
                 try {
                   const res: any = await consentApi.grant({
@@ -408,7 +503,14 @@ function Consents({ items, setItems, patientID }: { items: Consent[]; setItems: 
                     expiryDate: expiry,
                   });
                   setItems([
-                    { id: res.consentID ?? res.data?.consentID, org: newOrg, resourceType: newType, resourceTitle: `${newType.replace("_", " ")} access`, status: "ACTIVE", expiresOn: expiry },
+                    {
+                      id: res.consentID ?? res.data?.consentID,
+                      org: newOrg,
+                      resourceType: newType,
+                      resourceTitle: `${newType.replace("_", " ")} access`,
+                      status: "ACTIVE",
+                      expiresOn: expiry,
+                    },
                     ...items,
                   ]);
                   setOpen(false);
@@ -458,8 +560,8 @@ function Consents({ items, setItems, patientID }: { items: Consent[]; setItems: 
                 />
               </div>
               <DialogFooter>
-                <Button type="submit" className="w-full">
-                  Grant consent
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Granting…" : "Grant consent"}
                 </Button>
               </DialogFooter>
             </form>
@@ -506,7 +608,11 @@ function Consents({ items, setItems, patientID }: { items: Consent[]; setItems: 
                       onClick={async () => {
                         try {
                           await consentApi.revoke(c.id);
-                          setItems(items.map((i) => (i.id === c.id ? { ...i, status: "REVOKED" } : i)));
+                          setItems(
+                            items.map((i) =>
+                              i.id === c.id ? { ...i, status: "REVOKED" } : i,
+                            ),
+                          );
                           toast.success("Consent revoked");
                         } catch (err) {
                           toast.error(err instanceof ApiError ? err.message : "Couldn't revoke consent");

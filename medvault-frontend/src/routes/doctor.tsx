@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { permissionRequestApi, ApiError,consultationApi, prescriptionApi,treatmentRelationshipApi,referralApi,emergencyApi  } from "@/lib/api";
+import { getSession } from "@/lib/session";
 import {
   Activity,
   AlertTriangle,
@@ -54,7 +56,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getSession } from "@/lib/session";
 import {
   mockAudit,
   mockPatients,
@@ -133,12 +134,12 @@ function DoctorDashboard() {
       {tab === "overview" && <Overview name={session.name} onGoto={setTab} />}
       {tab === "search" && <PatientSearch />}
       {tab === "patients" && <MyPatients />}
-      {tab === "consults" && <Consultations />}
-      {tab === "rx" && <Prescriptions />}
+      {tab === "consults" && <Consultations doctorID={session.id!} />}
+      {tab === "rx" && <Prescriptions doctorID={session.id!} />}
       {tab === "labs" && <LabReports />}
-      {tab === "referrals" && <Referrals />}
+      {tab === "referrals" && <Referrals doctorID={session.id!} />}
       {tab === "permissions" && <PermissionsSent />}
-      {tab === "emergency" && <EmergencyAccess />}
+      {tab === "emergency" && <EmergencyAccess doctorID={session.id!} />}
       {tab === "audit" && (
         <div className="space-y-4">
           <SectionHeader
@@ -297,60 +298,136 @@ function PatientSearch() {
 
 function MyPatients() {
   const [patients, setPatients] = useState(mockPatients);
+  const [realItems, setRealItemsState] = useState<{ id: string; patientID: string; relationshipType: string; status: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_relationships") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const setRealItems = (items: typeof realItems) => {
+    setRealItemsState(items);
+    localStorage.setItem("medvault_relationships", JSON.stringify(items));
+  };
+  const [open, setOpen] = useState(false);
+  const [patientID, setPatientID] = useState("");
+  const [relationshipType, setRelationshipType] = useState("ONGOING_TREATMENT");
+  const [loading, setLoading] = useState(false);
+
+  const TYPES = [
+    "RECENT_APPOINTMENT",
+    "FOLLOW_UP_CHECKUP",
+    "ONGOING_TREATMENT",
+    "REFERRED_BY_DOCTOR",
+  ];
+
+  const act = async (id: string, action: "discharge" | "dormant" | "reactivate") => {
+    try {
+      if (action === "discharge") await treatmentRelationshipApi.discharge(id);
+      if (action === "dormant") await treatmentRelationshipApi.markDormant(id);
+      if (action === "reactivate") await treatmentRelationshipApi.reactivate(id);
+      setRealItems(
+        realItems.map((x) =>
+          x.id === id
+            ? { ...x, status: action === "dormant" ? "Dormant" : action === "reactivate" ? "Active" : "Discharged" }
+            : x,
+        ),
+      );
+      toast.success(`Relationship ${action === "dormant" ? "marked dormant" : action === "reactivate" ? "reactivated" : "discharged"}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : `Couldn't ${action}`);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <SectionHeader
-        title="My patients"
-        subtitle="Patients currently under a treatment relationship."
-      />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeader
+          title="My patients"
+          subtitle="Patients currently under a treatment relationship."
+        />
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button>New treatment relationship</Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create treatment relationship</DialogTitle>
+            </DialogHeader>
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!patientID) { toast.error("Enter a patient ID"); return; }
+                setLoading(true);
+                try {
+                  const res: any = await treatmentRelationshipApi.create({ patientID, relationshipType });
+                  setRealItems([
+                    { id: res.relationshipID ?? res.data?.relationshipID, patientID, relationshipType, status: "Active" },
+                    ...realItems,
+                  ]);
+                  setOpen(false);
+                  setPatientID("");
+                  toast.success("Treatment relationship created");
+                } catch (err) {
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't create relationship");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+            >
+              <Input placeholder="Patient ID (e.g. PAT0049)" value={patientID} onChange={(e) => setPatientID(e.target.value)} />
+              <Select value={relationshipType} onValueChange={setRelationshipType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <DialogFooter>
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Creating…" : "Create"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
       <div className="space-y-3">
-        {patients.map((p) => (
-          <div
-            key={p.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm"
-          >
+        {realItems.map((p) => (
+          <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
             <div>
               <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-foreground">
-                  {p.name}
-                </div>
+                <div className="text-sm font-semibold text-foreground">{p.patientID}</div>
+                <StatusPill status={p.status} />
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">{p.relationshipType.replace(/_/g, " ")}</div>
+            </div>
+            <div className="flex gap-2">
+              {p.id && p.status === "Active" && (
+                <>
+                  <Button size="sm" variant="ghost" onClick={() => act(p.id, "dormant")}>Mark dormant</Button>
+                  <Button size="sm" variant="ghost" onClick={() => act(p.id, "discharge")}>Discharge</Button>
+                </>
+              )}
+              {p.status === "Dormant" && (
+                <Button size="sm" onClick={() => act(p.id, "reactivate")}>Reactivate</Button>
+              )}
+            </div>
+          </div>
+        ))}
+        {patients.map((p) => (
+          <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm opacity-60">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-foreground">{p.name}</div>
                 <StatusPill status={p.status} />
               </div>
               <div className="mt-0.5 text-xs text-muted-foreground">
-                {p.id} · {p.age}y · {p.gender} · {p.relationshipType}
+                {p.id} · {p.age}y · {p.gender} · {p.relationshipType} (demo data)
               </div>
-            </div>
-            <div className="flex gap-2">
-              {p.status === "Active" ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setPatients(
-                      patients.map((x) =>
-                        x.id === p.id ? { ...x, status: "Dormant" } : x,
-                      ),
-                    );
-                    toast.info("Relationship marked dormant");
-                  }}
-                >
-                  Mark dormant
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setPatients(
-                      patients.map((x) =>
-                        x.id === p.id ? { ...x, status: "Active" } : x,
-                      ),
-                    );
-                    toast.success("Relationship reactivated");
-                  }}
-                >
-                  Reactivate
-                </Button>
-              )}
             </div>
           </div>
         ))}
@@ -358,8 +435,18 @@ function MyPatients() {
     </div>
   );
 }
-
-function Consultations() {
+function Consultations({ doctorID }: { doctorID: string }) {
+  const [created, setCreatedState] = useState<{ id: string; patientID: string; recordType: string; diagnosis: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_consultations") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const setCreated = (items: typeof created) => {
+    setCreatedState(items);
+    localStorage.setItem("medvault_consultations", JSON.stringify(items));
+  };
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -367,27 +454,39 @@ function Consultations() {
           title="Consultations"
           subtitle="Create a new consultation or review recent ones."
         />
-        <CreateRecordDialog kind="Consultation" />
+        <CreateRecordDialog
+          kind="Consultation"
+          doctorID={doctorID}
+          onCreated={(r) => setCreated([r, ...created])}
+        />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        {mockRecords
-          .filter((r) => r.type === "CONSULTATION")
-          .map((r) => (
-            <DocumentCard
-              key={r.id}
-              record={r}
-              locked={r.sensitivity === "SENSITIVE"}
-              onRequestAccess={() =>
-                toast.success("Permission request sent to patient")
-              }
-            />
-          ))}
+        {created.length === 0 && (
+          <EmptyState label="No consultations created yet this session." />
+        )}
+        {created.map((r) => (
+          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-sm font-semibold">{r.id}</div>
+            <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
+            <div className="mt-2 text-sm">{r.diagnosis}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-
-function Prescriptions() {
+function Prescriptions({ doctorID }: { doctorID: string }) {
+  const [created, setCreatedState] = useState<{ id: string; patientID: string; recordType: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_prescriptions") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const setCreated = (items: typeof created) => {
+    setCreatedState(items);
+    localStorage.setItem("medvault_prescriptions", JSON.stringify(items));
+  };
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -395,25 +494,26 @@ function Prescriptions() {
           title="Prescriptions"
           subtitle="Issue prescriptions. Status is updated by pharmacy on dispense."
         />
-        <CreateRecordDialog kind="Prescription" />
+        <CreateRecordDialog
+          kind="Prescription"
+          doctorID={doctorID}
+          onCreated={(r) => setCreated([r, ...created])}
+        />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        {mockRecords
-          .filter((r) => r.type === "PRESCRIPTION")
-          .map((r) => (
-            <div key={r.id} className="space-y-2">
-              <DocumentCard record={r} />
-              <div className="flex items-center justify-between rounded-md border bg-surface-muted px-3 py-2 text-xs">
-                <span className="text-muted-foreground">Status</span>
-                <StatusPill status="ISSUED" />
-              </div>
-            </div>
-          ))}
+        {created.length === 0 && (
+          <EmptyState label="No prescriptions created yet this session." />
+        )}
+        {created.map((r) => (
+          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-sm font-semibold">{r.id}</div>
+            <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-
 function LabReports() {
   return (
     <div className="space-y-4">
@@ -439,8 +539,26 @@ function LabReports() {
   );
 }
 
-function Referrals() {
+function Referrals({ doctorID }: { doctorID: string }) {
   const [open, setOpen] = useState(false);
+  const [toDoctorID, setToDoctorID] = useState("");
+  const [patientID, setPatientID] = useState("");
+  const [reason, setReason] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [referralType, setReferralType] = useState("GENERAL");
+  const [items, setItemsState] = useState<{ id: string; patientID: string; toDoctorID: string; reason: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_referrals") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const setItems = (i: typeof items) => {
+    setItemsState(i);
+    localStorage.setItem("medvault_referrals", JSON.stringify(i));
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -461,22 +579,75 @@ function Referrals() {
             </DialogHeader>
             <form
               className="space-y-3"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                setOpen(false);
-                toast.success("Referral sent");
+                if (!toDoctorID || !patientID || !reason || !file) {
+                  toast.error("Fill in every field and attach a document");
+                  return;
+                }
+                setLoading(true);
+                try {
+                  const res: any = await referralApi.create(
+                    { patientID, fromDoctorID: doctorID, toDoctorID, referralReason: reason, referralType },
+                    file,
+                  );
+                  setItems([{ id: res.referralID, patientID, toDoctorID, reason }, ...items]);
+                  setOpen(false);
+                  setToDoctorID("");
+                  setPatientID("");
+                  setReason("");
+                  setFile(null);
+                  toast.success("Referral sent");
+                } catch (err) {
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't send referral");
+                } finally {
+                  setLoading(false);
+                }
               }}
             >
-              <FormField label="To doctor (ID or name)" placeholder="DR-1234" />
-              <FormField label="Patient" placeholder="PT-9001" />
+              <FormField
+                label="To doctor ID"
+                placeholder="e.g. DOC0002"
+                value={toDoctorID}
+                onChange={(e) => setToDoctorID(e.target.value)}
+              />
+              <FormField
+                label="Patient ID"
+                placeholder="e.g. PAT0049"
+                value={patientID}
+                onChange={(e) => setPatientID(e.target.value)}
+              />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Referral type</Label>
+                <Select value={referralType} onValueChange={setReferralType}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GENERAL">General</SelectItem>
+                    <SelectItem value="SPECIALIST">Specialist</SelectItem>
+                    <SelectItem value="ONCOLOGY">Oncology</SelectItem>
+                    <SelectItem value="PSYCHIATRY">Psychiatry (sensitive)</SelectItem>
+                    <SelectItem value="REPRODUCTIVE_HEALTH">Reproductive health (sensitive)</SelectItem>
+                    <SelectItem value="HIV_AIDS">HIV/AIDS (sensitive)</SelectItem>
+                    <SelectItem value="GENETIC_COUNSELING">Genetic counseling (sensitive)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Reason</Label>
-                <Textarea rows={3} placeholder="Reason for referral" />
+                <Textarea
+                  rows={3}
+                  placeholder="Reason for referral"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
               </div>
-              <FormField label="Attach document" type="file" />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Attach document</Label>
+                <Input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              </div>
               <DialogFooter>
-                <Button type="submit" className="w-full">
-                  Send referral
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Sending…" : "Send referral"}
                 </Button>
               </DialogFooter>
             </form>
@@ -484,67 +655,12 @@ function Referrals() {
         </Dialog>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
-        {mockRecords
-          .filter((r) => r.type === "REFERRAL")
-          .map((r) => (
-            <DocumentCard key={r.id} record={r} />
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function PermissionsSent() {
-  return (
-    <div className="space-y-4">
-      <SectionHeader
-        title="Permission requests (sent)"
-        subtitle="Status of your requests to view sensitive patient records."
-      />
-      <div className="space-y-3">
-        {[
-          {
-            id: "PRS-1",
-            patient: "Ananya Nair",
-            resource: "Psychiatry consultation",
-            status: "PENDING",
-          },
-          {
-            id: "PRS-2",
-            patient: "Rohan Gupta",
-            resource: "HIV screening",
-            status: "APPROVED",
-            windowH: 36,
-          },
-          {
-            id: "PRS-3",
-            patient: "Priya Sharma",
-            resource: "Genetic report",
-            status: "REJECTED",
-          },
-          {
-            id: "PRS-4",
-            patient: "Amit Verma",
-            resource: "Oncology summary",
-            status: "EXPIRED",
-          },
-        ].map((r) => (
-          <div
-            key={r.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm"
-          >
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold">{r.patient}</div>
-                <StatusPill status={r.status} />
-              </div>
-              <div className="text-xs text-muted-foreground">{r.resource}</div>
-            </div>
-            {"windowH" in r && r.status === "APPROVED" && (
-              <div className="text-xs text-success-foreground">
-                Access window: {r.windowH}h left
-              </div>
-            )}
+        {items.length === 0 && <EmptyState label="No referrals sent yet." />}
+        {items.map((r) => (
+          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-sm font-semibold">To: {r.toDoctorID}</div>
+            <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+            <div className="mt-2 text-sm">{r.reason}</div>
           </div>
         ))}
       </div>
@@ -552,7 +668,77 @@ function PermissionsSent() {
   );
 }
 
-function EmergencyAccess() {
+function PermissionsSent() {
+  const [items, setItems] = useState<{ id: string; patient: string; resource: string; status: string }[]>([
+    { id: "PRS-1", patient: "Ananya Nair", resource: "Psychiatry consultation", status: "PENDING" },
+    { id: "PRS-2", patient: "Rohan Gupta", resource: "HIV screening", status: "APPROVED" },
+    { id: "PRS-3", patient: "Priya Sharma", resource: "Genetic report", status: "REJECTED" },
+    { id: "PRS-4", patient: "Amit Verma", resource: "Oncology summary", status: "EXPIRED" },
+  ]);
+  const [open, setOpen] = useState(false);
+  const [patientID, setPatientID] = useState("");
+  const [resourceType, setResourceType] = useState("CONSULTATION");
+  const [resourceID, setResourceID] = useState("");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SectionHeader title="Permission requests (sent)" subtitle="Status of your requests to view sensitive patient records." />
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild><Button>Request permission</Button></DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Request access to a sensitive record</DialogTitle></DialogHeader>
+            <form className="space-y-3" onSubmit={async (e) => {
+              e.preventDefault();
+              if (!patientID || !resourceID || !reason) { toast.error("Fill in every field"); return; }
+              setLoading(true);
+              try {
+                const res: any = await permissionRequestApi.create({ patientID, resourceType, resourceID, reason });
+                setItems([{ id: res.requestID, patient: patientID, resource: resourceID, status: "PENDING" }, ...items]);
+                setOpen(false);
+                toast.success("Request sent to patient");
+              } catch (err) {
+                toast.error(err instanceof ApiError ? err.message : "Couldn't send request");
+              } finally { setLoading(false); }
+            }}>
+              <Input placeholder="Patient ID (e.g. PAT0049)" value={patientID} onChange={(e) => setPatientID(e.target.value)} />
+              <Select value={resourceType} onValueChange={setResourceType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CONSULTATION">Consultation</SelectItem>
+                  <SelectItem value="LAB_REPORT">Lab report</SelectItem>
+                  <SelectItem value="PRESCRIPTION">Prescription</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input placeholder="Resource ID (e.g. CONS0012)" value={resourceID} onChange={(e) => setResourceID(e.target.value)} />
+              <Input placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+              <DialogFooter>
+                <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending…" : "Send request"}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+      <div className="space-y-3">
+        {items.map((r) => (
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
+            <div>
+              <div className="flex items-center gap-2"><div className="text-sm font-semibold">{r.patient}</div><StatusPill status={r.status} /></div>
+              <div className="text-xs text-muted-foreground">{r.resource}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+function EmergencyAccess({ doctorID }: { doctorID: string }) {
+  const [patientID, setPatientID] = useState("");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -573,21 +759,27 @@ function EmergencyAccess() {
               cannot grant access (e.g. unconscious). Your action, identity,
               and reason are permanently written to the ledger.
             </p>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <FormField label="Patient ID" placeholder="PT-9001" />
-              <FormField label="Encounter location" placeholder="ER, AIIMS Delhi" />
+            <div className="mt-4">
+              <FormField
+                label="Patient ID"
+                placeholder="e.g. PAT0049"
+                value={patientID}
+                onChange={(e) => setPatientID(e.target.value)}
+              />
             </div>
             <div className="mt-3 space-y-1.5">
               <Label className="text-xs">Clinical reason</Label>
               <Textarea
                 rows={3}
                 placeholder="Patient unconscious after trauma; need history and allergies."
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
               />
             </div>
             <div className="mt-4 flex justify-end">
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive">
+                  <Button variant="destructive" disabled={!patientID || !reason}>
                     <AlertTriangle className="h-4 w-4" />
                     Confirm emergency access
                   </Button>
@@ -605,9 +797,30 @@ function EmergencyAccess() {
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      onClick={() =>
-                        toast.success("Emergency access granted — audit written")
-                      }
+                      disabled={loading}
+                      onClick={async () => {
+                        setLoading(true);
+                        try {
+                         await emergencyApi.create({ patientID, reason, doctorID });
+                          try {
+                            const existing = JSON.parse(localStorage.getItem("medvault_relationships") ?? "[]");
+                            localStorage.setItem(
+                              "medvault_relationships",
+                              JSON.stringify([
+                                { id: "", patientID, relationshipType: "ASSIGNED_EMERGENCY_PHYSICIAN (auto-expires 24h)", status: "Active" },
+                                ...existing,
+                              ]),
+                            );
+                          } catch {}
+                          toast.success("Emergency access granted — audit written");
+                          setPatientID("");
+                          setReason("");
+                        } catch (err) {
+                          toast.error(err instanceof ApiError ? err.message : "Couldn't grant emergency access");
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
                     >
                       Yes, proceed
                     </AlertDialogAction>
@@ -622,10 +835,65 @@ function EmergencyAccess() {
   );
 }
 
-function CreateRecordDialog({ kind }: { kind: "Consultation" | "Prescription" }) {
+const CONSULTATION_TYPES: { value: string; label: string; sensitive?: boolean }[] = [
+  { value: "GENERAL", label: "General" },
+  { value: "FOLLOW_UP", label: "Follow-up" },
+  { value: "CARDIOLOGY", label: "Cardiology" },
+  { value: "ORTHOPEDICS", label: "Orthopedics" },
+  { value: "DERMATOLOGY", label: "Dermatology" },
+  { value: "NEUROLOGY", label: "Neurology" },
+  { value: "ENDOCRINOLOGY", label: "Endocrinology" },
+  { value: "PULMONOLOGY", label: "Pulmonology" },
+  { value: "GASTROENTEROLOGY", label: "Gastroenterology" },
+  { value: "PSYCHIATRY", label: "Psychiatry", sensitive: true },
+  { value: "SUBSTANCE_ABUSE", label: "Substance abuse", sensitive: true },
+  { value: "REPRODUCTIVE_HEALTH", label: "Reproductive health", sensitive: true },
+  { value: "HIV_AIDS", label: "HIV/AIDS", sensitive: true },
+  { value: "GENETIC_COUNSELING", label: "Genetic counseling", sensitive: true },
+  { value: "DISABILITY", label: "Disability", sensitive: true },
+  { value: "TERMINAL_ILLNESS", label: "Terminal illness", sensitive: true },
+  { value: "MINOR", label: "Minor", sensitive: true },
+  { value: "ONCOLOGY", label: "Oncology", sensitive: true },
+  { value: "PEDIATRICS", label: "Pediatrics", sensitive: true },
+  { value: "GYNECOLOGY", label: "Gynecology", sensitive: true },
+];
+
+const PRESCRIPTION_TYPES: { value: string; label: string; sensitive?: boolean }[] = [
+  { value: "GENERAL", label: "General" },
+  { value: "GENERAL_CHRONIC", label: "General (chronic)" },
+  { value: "ONCOLOGY", label: "Oncology" },
+  { value: "PSYCHIATRIC", label: "Psychiatric", sensitive: true },
+  { value: "CONTROLLED_SUBSTANCE", label: "Controlled substance", sensitive: true },
+  { value: "REPRODUCTIVE", label: "Reproductive", sensitive: true },
+  { value: "HIV_MEDICATION", label: "HIV medication", sensitive: true },
+];
+
+function CreateRecordDialog({
+  kind,
+  doctorID,
+  onCreated,
+}: {
+  kind: "Consultation" | "Prescription";
+  doctorID: string;
+  onCreated?: (r: { id: string; patientID: string; recordType: string; diagnosis: string }) => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [patientID, setPatientID] = useState("");
+  const [recordType, setRecordType] = useState("GENERAL");
+  const [diagnosis, setDiagnosis] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const types = kind === "Consultation" ? CONSULTATION_TYPES : PRESCRIPTION_TYPES;
+
+  const reset = () => {
+    setPatientID("");
+    setRecordType("GENERAL");
+    setDiagnosis("");
+    setFile(null);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
       <DialogTrigger asChild>
         <Button>
           <FileText className="h-4 w-4" />
@@ -638,35 +906,69 @@ function CreateRecordDialog({ kind }: { kind: "Consultation" | "Prescription" })
         </DialogHeader>
         <form
           className="space-y-3"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            setOpen(false);
-            toast.success(`${kind} recorded`);
+            if (!patientID || !file) {
+              toast.error("Patient ID and a document are required");
+              return;
+            }
+            if (kind === "Consultation" && !diagnosis) {
+              toast.error("Diagnosis / notes are required");
+              return;
+            }
+            setLoading(true);
+            try {
+              let newID = "";
+              if (kind === "Consultation") {
+                const res: any = await consultationApi.create(
+                  { patientID, doctorID, diagnosis, recordType },
+                  file,
+                );
+                newID = res.consultationID ?? "";
+              } else {
+                const res: any = await prescriptionApi.create(
+                  { patientID, doctorID, recordType },
+                  file,
+                );
+                newID = res.prescriptionID ?? "";
+              }
+              onCreated?.({ id: newID, patientID, recordType, diagnosis });
+              setOpen(false);
+              reset();
+              toast.success(`${kind} recorded`);
+            } catch (err) {
+              toast.error(err instanceof ApiError ? err.message : `Couldn't save ${kind.toLowerCase()}`);
+            } finally {
+              setLoading(false);
+            }
           }}
         >
-          <FormField label="Patient (ID or name)" placeholder="PT-9001" />
+          <FormField
+            label="Patient ID"
+            placeholder="e.g. PAT0049"
+            value={patientID}
+            onChange={(e) => setPatientID(e.target.value)}
+          />
           <div className="space-y-1.5">
             <Label className="text-xs">Category</Label>
-            <Select>
+            <Select value={recordType} onValueChange={setRecordType}>
               <SelectTrigger>
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   <SelectLabel>Normal</SelectLabel>
-                  {normalRecordCategories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  {types.filter((t) => !t.sensitive).map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectGroup>
                 <SelectGroup>
-                  <SelectLabel className="text-sensitive">
-                    Sensitive
-                  </SelectLabel>
-                  {sensitiveCategories.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
+                  <SelectLabel className="text-sensitive">Sensitive</SelectLabel>
+                  {types.filter((t) => t.sensitive).map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -676,13 +978,24 @@ function CreateRecordDialog({ kind }: { kind: "Consultation" | "Prescription" })
           {kind === "Consultation" && (
             <div className="space-y-1.5">
               <Label className="text-xs">Diagnosis / notes</Label>
-              <Textarea rows={3} placeholder="Clinical summary" />
+              <Textarea
+                rows={3}
+                placeholder="Clinical summary"
+                value={diagnosis}
+                onChange={(e) => setDiagnosis(e.target.value)}
+              />
             </div>
           )}
-          <FormField label="Attach document" type="file" />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Attach document</Label>
+            <Input
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
           <DialogFooter>
-            <Button type="submit" className="w-full">
-              Save {kind.toLowerCase()}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Saving…" : `Save ${kind.toLowerCase()}`}
             </Button>
           </DialogFooter>
         </form>
@@ -699,6 +1012,13 @@ function FormField({
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
       <Input {...rest} />
+    </div>
+  );
+}
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-dashed bg-surface-muted p-8 text-center text-sm text-muted-foreground">
+      {label}
     </div>
   );
 }

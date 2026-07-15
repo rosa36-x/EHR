@@ -222,7 +222,7 @@ export const prescriptionApi = {
     id: string,
     status: "ISSUED" | "DISPENSED" | "CANCELLED",
     org: "hospital" | "pharmacy" = "pharmacy",
-  ) => patch(`/prescriptions/${id}/status?org=${org}`, { status }),
+  ) => patch(`/prescriptions/${id}/status?org=${org}`, { status, org }),
 };
 
 export const labReportApi = {

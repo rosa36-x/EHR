@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { prescriptionApi, labReportApi, ApiError } from "@/lib/api";
 import {
   Activity,
   Building2,
@@ -138,7 +139,7 @@ function OrgDashboard() {
       badgeTone={org === "Governance" ? "muted" : "accent"}
     >
       {org === "Pharmacy" && <PharmacyView tab={tab} />}
-      {org === "Laboratory" && <LabView tab={tab} />}
+      {org === "Laboratory" && <LabView tab={tab} labTechID={session.id!} />}
       {org === "Governance" && <GovernanceView tab={tab} />}
     </DashboardShell>
   );
@@ -166,57 +167,71 @@ function PharmacyView({ tab }: { tab: string }) {
 function PharmacyFulfill() {
   const [q, setQ] = useState("");
   const [result, setResult] = useState<"none" | "allowed" | null>(null);
-  const [status, setStatus] = useState<"ISSUED" | "DISPENSED">("ISSUED");
-  const rx = mockRecords.find((r) => r.type === "PRESCRIPTION");
+  const [rx, setRx] = useState<any>(null);
+  const [rxID, setRxID] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const search = async () => {
+    if (!q) return;
+    setLoading(true);
+    try {
+      const res: any = await prescriptionApi.get(q, "pharmacy");
+      setRx(res.data);
+      setRxID(q);
+      setResult("allowed");
+    } catch (err) {
+      setResult("none");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
       <SectionHeader
         title="Prescriptions to fulfill"
-        subtitle="Search by patient ID or prescription ID. Access is consent-gated."
+        subtitle="Search by prescription ID. Access is consent-gated."
       />
       <div className="flex gap-2">
         <Input
-          placeholder="PT-9001 or REC-1002"
+          placeholder="e.g. PRE0012"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <Button
-          variant="outline"
-          onClick={() => {
-            if (!q) return;
-            if (q.toUpperCase().includes("REC-1002") || q.toUpperCase().includes("PT-9001")) {
-              setResult("allowed");
-            } else {
-              setResult("none");
-            }
-          }}
-        >
+        <Button variant="outline" onClick={search} disabled={loading}>
           <Search className="h-4 w-4" />
-          Search
+          {loading ? "Searching…" : "Search"}
         </Button>
       </div>
 
       {result === "none" && (
         <AccessDenied
           title="No active consent"
-          message="This patient hasn't granted Pharmacy access to any prescription matching your search. Ask them to share it via their MedVault app."
+          message="This patient hasn't granted Pharmacy access to this prescription, or it doesn't exist."
         />
       )}
 
       {result === "allowed" && rx && (
         <div className="space-y-3">
-          <DocumentCard record={rx} />
+          <div className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-sm font-semibold">{rx.recordType}</div>
+            <div className="text-xs text-muted-foreground">Patient: {rx.patientID}</div>
+          </div>
           <div className="flex items-center justify-between rounded-md border bg-surface-muted px-4 py-3">
             <div className="text-sm">
               <span className="text-muted-foreground">Status:</span>{" "}
-              <StatusPill status={status} />
+              <StatusPill status={rx.status} />
             </div>
             <Button
-              disabled={status === "DISPENSED"}
-              onClick={() => {
-                setStatus("DISPENSED");
-                toast.success("Prescription marked as dispensed");
+              disabled={rx.status === "DISPENSED"}
+              onClick={async () => {
+                try {
+                  await prescriptionApi.updateStatus(rxID, "DISPENSED", "pharmacy");
+                  setRx({ ...rx, status: "DISPENSED" });
+                  toast.success("Prescription marked as dispensed");
+                } catch (err) {
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't update status");
+                }
               }}
             >
               Mark as dispensed
@@ -229,7 +244,7 @@ function PharmacyFulfill() {
 }
 
 // -------------------- Laboratory --------------------
-function LabView({ tab }: { tab: string }) {
+function LabView({ tab, labTechID }: { tab: string; labTechID: string }) {
   if (tab === "overview") {
     return (
       <div className="space-y-6">
@@ -244,65 +259,90 @@ function LabView({ tab }: { tab: string }) {
       </div>
     );
   }
-  if (tab === "create") return <LabCreate />;
+  if (tab === "create") return <LabCreate labTechID={labTechID} />;
   return <LabMine />;
 }
 
-function LabCreate() {
+function LabCreate({ labTechID }: { labTechID: string }) {
+  const [patientID, setPatientID] = useState("");
+  const [reportType, setReportType] = useState("BLOOD_TEST");
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+
+  const NORMAL = ["BLOOD_TEST", "URINE_TEST", "BIOPSY", "IMAGING", "PATHOLOGY", "MICROBIOLOGY"];
+  const SENSITIVE = ["HIV_TEST", "STI_TEST", "GENETIC_TEST", "DRUG_TEST", "PREGNANCY_TEST", "TOXICOLOGY"];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <SectionHeader
-          title="Create lab report"
-          subtitle="Reports are encrypted and pushed to the ledger with patient consent."
-        />
-      </div>
+      <SectionHeader
+        title="Create lab report"
+        subtitle="Reports are encrypted and pushed to the ledger with patient consent."
+      />
       <div className="rounded-lg border bg-card p-6 shadow-sm">
         <form
           className="space-y-4"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
-            toast.success("Lab report created");
-            setOpen(true);
+            if (!patientID || !file) {
+              toast.error("Patient ID and a file are required");
+              return;
+            }
+            setLoading(true);
+            try {
+              const res: any = await labReportApi.create({ patientID, labTechID, reportType }, file);
+              const existing = JSON.parse(localStorage.getItem("medvault_labreports") ?? "[]");
+              localStorage.setItem(
+                "medvault_labreports",
+                JSON.stringify([{ id: res.reportID, patientID, reportType }, ...existing]),
+              );
+              toast.success("Lab report created");
+              setOpen(true);
+              setPatientID("");
+              setFile(null);
+            } catch (err) {
+              toast.error(err instanceof ApiError ? err.message : "Couldn't save report");
+            } finally {
+              setLoading(false);
+            }
           }}
         >
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Patient ID" placeholder="PT-9001" />
+            <Field
+              label="Patient ID"
+              placeholder="e.g. PAT0049"
+              value={patientID}
+              onChange={(e) => setPatientID(e.target.value)}
+            />
             <div className="space-y-1.5">
               <Label className="text-xs">Report type</Label>
-              <Select>
+              <Select value={reportType} onValueChange={setReportType}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
                     <SelectLabel>Normal</SelectLabel>
-                    {["CBC", "Lipid panel", "TSH", "Liver panel"].map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
+                    {NORMAL.map((c) => (
+                      <SelectItem key={c} value={c}>{c.replace("_", " ")}</SelectItem>
                     ))}
                   </SelectGroup>
                   <SelectGroup>
-                    <SelectLabel className="text-sensitive">
-                      Sensitive
-                    </SelectLabel>
-                    {["HIV", "STI", "Genetic", "Drug", "Pregnancy", "Toxicology"].map(
-                      (c) => (
-                        <SelectItem key={c} value={c}>
-                          {c}
-                        </SelectItem>
-                      ),
-                    )}
+                    <SelectLabel className="text-sensitive">Sensitive</SelectLabel>
+                    {SENSITIVE.map((c) => (
+                      <SelectItem key={c} value={c}>{c.replace("_", " ")}</SelectItem>
+                    ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
           </div>
-          <Field label="Attach report file" type="file" />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Attach report file</Label>
+            <Input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </div>
           <div className="flex justify-end">
-            <Button type="submit">Save report</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Saving…" : "Save report"}</Button>
           </div>
         </form>
       </div>
@@ -312,25 +352,25 @@ function LabCreate() {
             <DialogTitle>Report saved</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            The report is now visible to the patient and any clinician they
-            allow.
+            The report is now visible to the patient and any clinician they allow.
           </p>
           <DialogFooter>
             <Button onClick={() => setOpen(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <p className="text-xs text-muted-foreground">
-        Categories flagged as sensitive ({sensitiveCategories
-          .slice(0, 3)
-          .join(", ")}
-        , …) are automatically encrypted and patient-gated.
-      </p>
     </div>
   );
 }
 
 function LabMine() {
+  const [items] = useState<{ id: string; patientID: string; reportType: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_labreports") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
   return (
     <div className="space-y-4">
       <SectionHeader
@@ -338,17 +378,15 @@ function LabMine() {
         subtitle="Reports you've created."
       />
       <div className="grid gap-3 md:grid-cols-2">
-        {mockRecords
-          .filter((r) => r.type === "LAB_REPORT")
-          .map((r) => (
-            <div key={r.id} className="space-y-2">
-              <DocumentCard record={r} />
-              <div className="flex items-center justify-between rounded-md border bg-surface-muted px-3 py-2 text-xs">
-                <span className="text-muted-foreground">Status</span>
-                <StatusPill status="ACTIVE" />
-              </div>
-            </div>
-          ))}
+        {items.length === 0 && (
+          <EmptyState label="No lab reports created yet." />
+        )}
+        {items.map((r) => (
+          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="text-sm font-semibold">{r.reportType}</div>
+            <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -557,6 +595,13 @@ function Field({
     <div className="space-y-1.5">
       <Label className="text-xs">{label}</Label>
       <Input {...rest} />
+    </div>
+  );
+}
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-dashed bg-surface-muted p-8 text-center text-sm text-muted-foreground">
+      {label}
     </div>
   );
 }
