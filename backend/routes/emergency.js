@@ -26,7 +26,8 @@ router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
         { ...req.body, doctorID: req.user.id },
         req.user.id
     );
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.message?.includes("already have active") ? 409 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
