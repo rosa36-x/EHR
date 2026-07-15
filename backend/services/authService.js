@@ -84,7 +84,7 @@ export async function registerDoctor(data) {
  */
 export async function loginDoctorPassword(phone, password) {
     try {
-        const doctor = await Doctor.findOne({ phone });
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
 
         if (!doctor) {
             return { status: "FAILED", message: "Doctor not found" };
@@ -118,8 +118,7 @@ export async function loginDoctorPassword(phone, password) {
  */
 export async function initiateDoctorOTP(phone) {
     try {
-        const doctor = await Doctor.findOne({ phone });
-
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
         if (!doctor) {
             return { status: "FAILED", message: "Doctor not found" };
         }
@@ -156,7 +155,7 @@ export async function verifyDoctorOTP(phone, otp) {
 
         await OTP.deleteMany({ phone, role: "doctor" });
 
-        const doctor = await Doctor.findOne({ phone });
+        const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
 
         const token = generateToken(
             {
@@ -181,6 +180,9 @@ export async function verifyDoctorOTP(phone, otp) {
  * Register patient auth record after Fabric registration.
  * Called internally from patient registration flow.
  */
+export function generatePatientAuthToken(patientID) {
+    return generateToken({ id: patientID, role: "patient" }, PATIENT_JWT_EXP);
+}
 export async function registerPatientAuth(patientID, phone, aadhaarHash) {
     try {
         const existing = await PatientAuth.findOne({ phone });
