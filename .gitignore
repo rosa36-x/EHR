@@ -148,3 +148,22 @@ modified_config.json
 
 registerEnroll.sh
 caliper-benchmarks/run.log
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Model checkpoints
+*.pt
+
+# Backup files
+*.bak
+*.bak2
+
+# Shell scripts used for experiments
+*.sh
+
+# Experiment output folders
+repeated_runs_*/
+
+# (Optional) Ignore all Python cache recursively
+**/__pycache__/
