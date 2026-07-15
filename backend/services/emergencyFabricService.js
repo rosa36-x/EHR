@@ -15,6 +15,22 @@ const EMERGENCY_ACCESS_SAFETY_NET_HOURS = 24;
 export async function createEmergencyAccess(data, actorID) {
     let gateway, client;
     try {
+        // Prevent redundant emergency-access episodes: if this doctor already
+        // has an active, unexpired ASSIGNED_EMERGENCY_PHYSICIAN relationship
+        // for this patient, don't create a duplicate ledger entry + relationship.
+        const existing = await EmergencyAccessLog.findOne({
+            doctorID:  data.doctorID,
+            patientID: data.patientID,
+            status:    "ACTIVE",
+            expiresAt: { $gt: new Date().toISOString() },
+        });
+        if (existing) {
+            return {
+                status: "FAILED",
+                message: `You already have active emergency access to this patient (opened ${existing.createdAt}, expires ${existing.expiresAt}). Close it before opening a new one, or continue using the existing access.`,
+            };
+        }
+
         const emergencyAccessID = generateID("emergency");
 
         const result = await getContract("hospital");
