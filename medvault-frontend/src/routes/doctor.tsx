@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { permissionRequestApi, ApiError,consultationApi, prescriptionApi,treatmentRelationshipApi,referralApi,emergencyApi  } from "@/lib/api";
+import { permissionRequestApi, ApiError,consultationApi, prescriptionApi,treatmentRelationshipApi,referralApi,emergencyApi,biometricApi   } from "@/lib/api";
 import { getSession } from "@/lib/session";
 import {
   Activity,
@@ -735,9 +735,29 @@ function PermissionsSent() {
   );
 }
 function EmergencyAccess({ doctorID }: { doctorID: string }) {
-  const [patientID, setPatientID] = useState("");
+  const [fingerprintTemplate, setFingerprintTemplate] = useState("");
+  const [resolved, setResolved] = useState<{ patientID: string; fullName: string } | null>(null);
   const [reason, setReason] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const scan = async () => {
+    if (!fingerprintTemplate) {
+      toast.error("Enter/scan a fingerprint template");
+      return;
+    }
+    setScanning(true);
+    try {
+      const res: any = await biometricApi.resolve(fingerprintTemplate);
+      setResolved({ patientID: res.patientID, fullName: res.fullName });
+      toast.success(`Identified: ${res.fullName}`);
+    } catch (err) {
+      setResolved(null);
+      toast.error(err instanceof ApiError ? err.message : "Couldn't identify patient from biometric");
+    } finally {
+      setScanning(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -752,89 +772,103 @@ function EmergencyAccess({ doctorID }: { doctorID: string }) {
           </div>
           <div className="flex-1">
             <h3 className="text-base font-semibold text-foreground">
-              Trigger emergency access
+              Identify the patient
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Bypasses consent and permission gates. Use only when the patient
-              cannot grant access (e.g. unconscious). Your action, identity,
-              and reason are permanently written to the ledger.
+              If the patient can't confirm who they are, scan their fingerprint to obtain their record before continuing.
             </p>
-            <div className="mt-4">
-              <FormField
-                label="Patient ID"
-                placeholder="e.g. PAT0049"
-                value={patientID}
-                onChange={(e) => setPatientID(e.target.value)}
-              />
-            </div>
-            <div className="mt-3 space-y-1.5">
-              <Label className="text-xs">Clinical reason</Label>
-              <Textarea
-                rows={3}
-                placeholder="Patient unconscious after trauma; need history and allergies."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            <div className="mt-4 flex justify-end">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" disabled={!patientID || !reason}>
-                    <AlertTriangle className="h-4 w-4" />
-                    Confirm emergency access
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Grant yourself emergency access?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This overrides patient consent and is logged
-                      permanently. Governance may review.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      disabled={loading}
-                      onClick={async () => {
-                        setLoading(true);
-                        try {
-                         await emergencyApi.create({ patientID, reason, doctorID });
-                          try {
-                            const existing = JSON.parse(localStorage.getItem("medvault_relationships") ?? "[]");
-                            localStorage.setItem(
-                              "medvault_relationships",
-                              JSON.stringify([
-                                { id: "", patientID, relationshipType: "ASSIGNED_EMERGENCY_PHYSICIAN (auto-expires 24h)", status: "Active" },
-                                ...existing,
-                              ]),
-                            );
-                          } catch {}
-                          toast.success("Emergency access granted — audit written");
-                          setPatientID("");
-                          setReason("");
-                        } catch (err) {
-                          toast.error(err instanceof ApiError ? err.message : "Couldn't grant emergency access");
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                    >
-                      Yes, proceed
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
+
+            {!resolved ? (
+              <div className="mt-4 flex gap-2">
+                <Input
+                  placeholder="Fingerprint scan input"
+                  value={fingerprintTemplate}
+                  onChange={(e) => setFingerprintTemplate(e.target.value)}
+                />
+                <Button variant="outline" onClick={scan} disabled={scanning}>
+                  {scanning ? "Scanning…" : "Scan"}
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-md border bg-success/10 px-4 py-3 text-sm">
+                  Identified: <span className="font-semibold">{resolved.fullName}</span> ({resolved.patientID})
+                  <button
+                    className="ml-3 text-xs text-muted-foreground underline"
+                    onClick={() => { setResolved(null); setFingerprintTemplate(""); }}
+                  >
+                    Not this patient?
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Clinical reason</Label>
+                  <Textarea
+                    rows={3}
+                    placeholder="Patient unconscious after trauma; need history and allergies."
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" disabled={!reason}>
+                        <AlertTriangle className="h-4 w-4" />
+                        Confirm emergency access
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Grant yourself emergency access to {resolved.fullName}?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This overrides patient consent and is logged permanently. Governance may review.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={loading}
+                          onClick={async () => {
+                            setLoading(true);
+                            try {
+                              await emergencyApi.create({ patientID: resolved.patientID, reason, doctorID });
+                              try {
+                                const existing = JSON.parse(localStorage.getItem("medvault_relationships") ?? "[]");
+                                localStorage.setItem(
+                                  "medvault_relationships",
+                                  JSON.stringify([
+                                    { id: "", patientID: resolved.patientID, relationshipType: "ASSIGNED_EMERGENCY_PHYSICIAN (auto-expires 24h)", status: "Active" },
+                                    ...existing,
+                                  ]),
+                                );
+                              } catch {}
+                              toast.success("Emergency access granted — audit written");
+                              setResolved(null);
+                              setFingerprintTemplate("");
+                              setReason("");
+                            } catch (err) {
+                              toast.error(err instanceof ApiError ? err.message : "Couldn't grant emergency access");
+                            } finally {
+                              setLoading(false);
+                            }
+                          }}
+                        >
+                          Yes, proceed
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
 const CONSULTATION_TYPES: { value: string; label: string; sensitive?: boolean }[] = [
   { value: "GENERAL", label: "General" },
   { value: "FOLLOW_UP", label: "Follow-up" },

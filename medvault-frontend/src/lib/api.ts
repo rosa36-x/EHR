@@ -222,7 +222,7 @@ export const prescriptionApi = {
     id: string,
     status: "ISSUED" | "DISPENSED" | "CANCELLED",
     org: "hospital" | "pharmacy" = "pharmacy",
-  ) => patch(`/prescriptions/${id}/status?org=${org}`, { status, org }),
+  ) => patch(`/prescriptions/${id}/status?org=${org}`, { status }),
 };
 
 export const labReportApi = {
@@ -299,12 +299,18 @@ export const treatmentRelationshipApi = {
 // ── Emergency Access ─────────────────────────────────────────────────────
 
 export const emergencyApi = {
-  create: (data: { patientID: string; reason: string }) =>
+  create: (data: { patientID: string; reason: string; doctorID: string }) =>
     post("/emergency-access", { emergencyAccessID: genId("EA"), ...data }),
   get: (id: string) => get(`/emergency-access/${id}`),
   close: (id: string) => patch(`/emergency-access/${id}/close`),
 };
-
+export const biometricApi = {
+  resolve: (fingerprintTemplate: string) =>
+    post<{ status: string; patientID: string; fullName: string }>(
+      "/patients/resolve-biometric",
+      { fingerprintTemplate },
+    ),
+};
 // ── Audit ────────────────────────────────────────────────────────────────
 
 export const auditApi = {

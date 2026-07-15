@@ -114,31 +114,21 @@ function verifyOTP(transactionID, otp) {
     };
 }
 
-function authenticateBiometric(fingerprintTemplate) {
-    const record = aadhaarDB.find(
-        user => user.fingerprintTemplate === fingerprintTemplate
-    );
-
-    if (!record) {
-        return {
-            status: "FAILED",
-            message: "Biometric authentication failed"
-        };
-    }
-
-    const aadhaarVID = generateVID();
-    const aadhaarToken = generateToken();
-
-    return {
-        status: "SUCCESS",
-        fullName: record.fullName,
-        aadhaarVID,
-        aadhaarToken
-    };
-}
 
 export {
     authenticate,
     verifyOTP,
     authenticateBiometric
 };
+function authenticateBiometric(fingerprintTemplate) {
+    const record = aadhaarDB.find(
+        user => user.fingerprintTemplate === fingerprintTemplate
+    );
+    if (!record) {
+        return { status: "FAILED", message: "Biometric authentication failed" };
+    }
+    const aadhaarVID = generateVID();
+    const aadhaarToken = generateToken();
+    const aadhaarHash = hashAadhaar(record.aadhaarNumber);
+    return { status: "SUCCESS", fullName: record.fullName, aadhaarVID, aadhaarToken, aadhaarHash };
+}
