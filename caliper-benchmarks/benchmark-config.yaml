@@ -1,32 +1,24 @@
 # caliper-benchmarks/benchmark-config.yaml
 #
-# Full TPS sweep: 10 / 50 / 100 / 200 / 500 (fixed-rate) per operation, to
-# find the network's real saturation point rather than stopping at an
-# arbitrary tier. Stopped at 500 deliberately (not 1000) -- this runs on a
-# single laptop via Docker Compose (all 5 orgs + orderer + CAs sharing one
-# machine's CPU/RAM, not distributed hardware)
-
+# v5, per advisor feedback + observed create_consultation bend:
+#   - 10tps and 50tps removed everywhere (neither is near any observed or
+#     suspected saturation region; 100 is now the low-load baseline)
+#   - all three writes (create_treatment_relationship, create_consultation,
+#     create_prescription) get the same dense 100->500 ramp, since
+#     create_consultation's 200->500 jump already showed a real bend
+#     (send rate couldn't reach target at 500), not just
+#     create_treatment_relationship's known hard failure
 
 test:
   name: MedVault Chaincode Benchmark
   description: >
-    Throughput/latency benchmark for representative MedVault-X chaincode
-    operations (two reads, two writes) across a TPS sweep from 10 to 500,
-    with per-container CPU/memory monitoring.
+    Throughput/latency benchmark: one read, three writes, dense TPS ramp
+    (100 to 500) on every write operation for consistent, comparable
+    saturation curves.
   workers:
     number: 4
   rounds:
     # ── CheckActiveTreatmentRelationship (read) ────────────────────────────
-    - label: check_treatment_relationship_10tps
-      txNumber: 200
-      rateControl: { type: fixed-rate, opts: { tps: 10 } }
-      workload: { module: ./workloads/checkTreatmentRelationship.js }
-
-    - label: check_treatment_relationship_50tps
-      txNumber: 500
-      rateControl: { type: fixed-rate, opts: { tps: 50 } }
-      workload: { module: ./workloads/checkTreatmentRelationship.js }
-
     - label: check_treatment_relationship_100tps
       txNumber: 500
       rateControl: { type: fixed-rate, opts: { tps: 100 } }
@@ -43,16 +35,6 @@ test:
       workload: { module: ./workloads/checkTreatmentRelationship.js }
 
     # ── CreateTreatmentRelationship (write) ─────────────────────────────────
-    - label: create_treatment_relationship_10tps
-      txNumber: 100
-      rateControl: { type: fixed-rate, opts: { tps: 10 } }
-      workload: { module: ./workloads/createTreatmentRelationship.js }
-
-    - label: create_treatment_relationship_50tps
-      txNumber: 300
-      rateControl: { type: fixed-rate, opts: { tps: 50 } }
-      workload: { module: ./workloads/createTreatmentRelationship.js }
-
     - label: create_treatment_relationship_100tps
       txNumber: 500
       rateControl: { type: fixed-rate, opts: { tps: 100 } }
@@ -63,22 +45,37 @@ test:
       rateControl: { type: fixed-rate, opts: { tps: 200 } }
       workload: { module: ./workloads/createTreatmentRelationship.js }
 
+    - label: create_treatment_relationship_250tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 250 } }
+      workload: { module: ./workloads/createTreatmentRelationship.js }
+
+    - label: create_treatment_relationship_300tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 300 } }
+      workload: { module: ./workloads/createTreatmentRelationship.js }
+
+    - label: create_treatment_relationship_350tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 350 } }
+      workload: { module: ./workloads/createTreatmentRelationship.js }
+
+    - label: create_treatment_relationship_400tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 400 } }
+      workload: { module: ./workloads/createTreatmentRelationship.js }
+
+    - label: create_treatment_relationship_450tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 450 } }
+      workload: { module: ./workloads/createTreatmentRelationship.js }
+
     - label: create_treatment_relationship_500tps
       txNumber: 800
       rateControl: { type: fixed-rate, opts: { tps: 500 } }
       workload: { module: ./workloads/createTreatmentRelationship.js }
 
     # ── CreateConsultation (write, PDC) ─────────────────────────────────────
-    - label: create_consultation_10tps
-      txNumber: 100
-      rateControl: { type: fixed-rate, opts: { tps: 10 } }
-      workload: { module: ./workloads/createConsultation.js }
-
-    - label: create_consultation_50tps
-      txNumber: 300
-      rateControl: { type: fixed-rate, opts: { tps: 50 } }
-      workload: { module: ./workloads/createConsultation.js }
-
     - label: create_consultation_100tps
       txNumber: 500
       rateControl: { type: fixed-rate, opts: { tps: 100 } }
@@ -89,45 +86,73 @@ test:
       rateControl: { type: fixed-rate, opts: { tps: 200 } }
       workload: { module: ./workloads/createConsultation.js }
 
+    - label: create_consultation_250tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 250 } }
+      workload: { module: ./workloads/createConsultation.js }
+
+    - label: create_consultation_300tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 300 } }
+      workload: { module: ./workloads/createConsultation.js }
+
+    - label: create_consultation_350tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 350 } }
+      workload: { module: ./workloads/createConsultation.js }
+
+    - label: create_consultation_400tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 400 } }
+      workload: { module: ./workloads/createConsultation.js }
+
+    - label: create_consultation_450tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 450 } }
+      workload: { module: ./workloads/createConsultation.js }
+
     - label: create_consultation_500tps
       txNumber: 800
       rateControl: { type: fixed-rate, opts: { tps: 500 } }
       workload: { module: ./workloads/createConsultation.js }
 
-    # ── HasActiveConsent (cross-org PDC read) ───────────────────────────────
-    - label: check_active_consent_10tps
-      txNumber: 200
-      rateControl: { type: fixed-rate, opts: { tps: 10 } }
-      workload: { module: ./workloads/checkActiveConsent.js }
-
-    - label: check_active_consent_50tps
-      txNumber: 500
-      rateControl: { type: fixed-rate, opts: { tps: 50 } }
-      workload: { module: ./workloads/checkActiveConsent.js }
-
-    - label: check_active_consent_100tps
+    # ── CreatePrescription (write) ───────────────────────────────────────────
+    - label: create_prescription_100tps
       txNumber: 500
       rateControl: { type: fixed-rate, opts: { tps: 100 } }
-      workload: { module: ./workloads/checkActiveConsent.js }
+      workload: { module: ./workloads/createPrescription.js }
 
-    - label: check_active_consent_200tps
-      txNumber: 1000
+    - label: create_prescription_200tps
+      txNumber: 600
       rateControl: { type: fixed-rate, opts: { tps: 200 } }
-      workload: { module: ./workloads/checkActiveConsent.js }
+      workload: { module: ./workloads/createPrescription.js }
 
-    - label: check_active_consent_500tps
-      txNumber: 1500
+    - label: create_prescription_250tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 250 } }
+      workload: { module: ./workloads/createPrescription.js }
+
+    - label: create_prescription_300tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 300 } }
+      workload: { module: ./workloads/createPrescription.js }
+
+    - label: create_prescription_350tps
+      txNumber: 700
+      rateControl: { type: fixed-rate, opts: { tps: 350 } }
+      workload: { module: ./workloads/createPrescription.js }
+
+    - label: create_prescription_400tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 400 } }
+      workload: { module: ./workloads/createPrescription.js }
+
+    - label: create_prescription_450tps
+      txNumber: 800
+      rateControl: { type: fixed-rate, opts: { tps: 450 } }
+      workload: { module: ./workloads/createPrescription.js }
+
+    - label: create_prescription_500tps
+      txNumber: 800
       rateControl: { type: fixed-rate, opts: { tps: 500 } }
-      workload: { module: ./workloads/checkActiveConsent.js }
-
-monitors:
-  resource:
-    - module: docker
-      options:
-        interval: 5
-        containers:
-          - orderer.medvault.com
-          - peer0.hospital.medvault.com
-          - peer0.pharmacy.medvault.com
-          - peer0.laboratory.medvault.com
-          - peer0.governance.medvault.com
+      workload: { module: ./workloads/createPrescription.js }
