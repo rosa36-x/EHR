@@ -167,3 +167,16 @@ repeated_runs_*/
 
 # (Optional) Ignore all Python cache recursively
 **/__pycache__/
+
+anomalyDetection/check_or_rule.py
+anomalyDetection/check_p1_definition.py
+anomalyDetection/check_sequence_recall.py
+anomalyDetection/combine_scores.py.bak.20260716_102555
+anomalyDetection/confirm_p97_fulldata.py
+anomalyDetection/check_lstm_threshold.py
+anomaly-engine-v2/__pycache__/
+anomaly-engine-v2/venv/
+anomaly-engine-v2/synthetic_audit_log.csv
+anomaly-engine-v2/logs.log
+anomaly-engine-v2/feature_engineering.py
+anomaly-engine-v2/.ipynb_checkpoints/benchmark-checkpoint.ipynb
