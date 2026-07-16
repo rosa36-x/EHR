@@ -180,3 +180,11 @@ anomaly-engine-v2/synthetic_audit_log.csv
 anomaly-engine-v2/logs.log
 anomaly-engine-v2/feature_engineering.py
 anomaly-engine-v2/.ipynb_checkpoints/benchmark-checkpoint.ipynb
+anomalyDetection/check_p2_score_col.py
+anomalyDetection/lstm_sequence_model.py.bak.20260716_150234
+anomalyDetection/lstm_sequence_model.py.bak.20260716_152019
+backend/services/db.js.bak.20260716_150234
+backend/services/db.js.bak.20260716_152019
+backend/services/db.js.bak.20260716_152058
+backend/services/db.js.bak.20260716_152320
+docs/AI_MODEL_EVALUATION_NOTES.md.bak.20260716_145831

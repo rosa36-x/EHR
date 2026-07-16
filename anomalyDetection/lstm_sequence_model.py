@@ -76,6 +76,7 @@ def build_actor_sequences(df: pd.DataFrame):
     per-actor embedding is still deferred.
     """
     df = df.sort_values(["actorID", "timestamp"])
+    has_label = "label" in df.columns
     sequences = defaultdict(list)
     for actor_id, group in df.groupby("actorID"):
         prev_ts = None
@@ -83,7 +84,8 @@ def build_actor_sequences(df: pd.DataFrame):
         for _, row in group.iterrows():
             gap = None if prev_ts is None else (row["timestamp"] - prev_ts).total_seconds()
             token = f"{actor_role}|{row['action']}|{row['resourceType']}|{delta_bucket(gap)}"
-            sequences[actor_id].append((token, row["timestamp"].date(), row["label"]))
+            label = row["label"] if has_label else "unknown"
+            sequences[actor_id].append((token, row["timestamp"].date(), label))
             prev_ts = row["timestamp"]
     return sequences
 

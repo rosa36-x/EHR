@@ -24,13 +24,13 @@ Design:
     trade, not noise). votes is still reported as a column for
     interpretability ("N of 5 models agree") but no longer decides P1.
   PRIORITY 2 (sequence-anomaly candidate): LSTM's max_z_surprisal clears
-    its own p97 threshold, AND the row is NOT already Priority 1 (dedup --
+    its own p99 threshold, AND the row is NOT already Priority 1 (dedup --
     a row caught by both stays Priority 1, it doesn't get double-counted
-    or downgraded). p97 was chosen via a percentile sweep (0.99/0.97/0.95/
-    0.90): p97 matches p95's exact sequence-type catch rate (9/23,
-    recall=0.391) with far fewer total flags (223 vs 291) -- tightening
-    further (p99) drops real catches (6/23), loosening further (p90) adds
-    188 more flags with zero additional catches.
+    or downgraded). Checked directly via check_p2_score_col.py: p99 cuts
+    P2 volume by ~78% vs p97 (19 vs 88 flags) and roughly triples P2
+    precision (0.316 vs 0.102), at a cost of 3 fewer sequence-type catches
+    (6/23 vs 9/23) -- a better trade given P2 is a lower-confidence
+    "worth a quick check" tier, not a ranked-by-urgency list.
   NONE: neither fires.
 
 Precision is intentionally NOT uniform across tiers. P1 carries the
@@ -61,7 +61,7 @@ def tag_priority(ensemble_df: pd.DataFrame, lstm_df: pd.DataFrame,
     ensemble_df["date"] = ensemble_df["date"].astype(str)
     lstm_df["date"] = lstm_df["date"].astype(str)
 
-    ensemble_cols = ["actorID", "date", "votes", "anomaly_score", "label"]
+    ensemble_cols = ["actorID", "date", "votes", "anomaly_score", "label", "top_features"]
     if "held_out" in ensemble_df.columns:
         ensemble_cols.append("held_out")
     ensemble_slim = ensemble_df[ensemble_cols].rename(
@@ -74,6 +74,14 @@ def tag_priority(ensemble_df: pd.DataFrame, lstm_df: pd.DataFrame,
         columns={lstm_score_col: "lstm_score", "held_out": "lstm_held_out"})
 
     merged = ensemble_slim.merge(lstm_slim, on=["actorID", "date"], how="left")
+
+    # Left merge can leave NaN in lstm_* columns for actor-days the LSTM
+    # output didn't cover -- NaN serializes as a truly EMPTY CSV field,
+    # which anomalyDetectionService.js's parseCSV silently drops (its regex
+    # requires 1+ chars per field), shifting every later column left by one.
+    # Fill immediately after merge so nothing downstream ever sees NaN.
+    if "lstm_held_out" in merged.columns:
+        merged["lstm_held_out"] = merged["lstm_held_out"].fillna(False)
 
     # LSTM threshold fit on the FULL lstm_df distribution -- what a
     # production system would actually use, not re-fit per evaluation slice.
@@ -115,7 +123,7 @@ def main():
     parser.add_argument("--out", default="prioritized_flags.csv")
     parser.add_argument("--ensemble-percentile", type=float, default=0.97)
     parser.add_argument("--lstm-score-col", default="max_z_surprisal")
-    parser.add_argument("--lstm-percentile", type=float, default=0.97)
+    parser.add_argument("--lstm-percentile", type=float, default=0.99)
     parser.add_argument("--top-n", type=int, default=10)
     args = parser.parse_args()
 
