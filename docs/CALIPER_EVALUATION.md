@@ -1,71 +1,78 @@
 # Performance Evaluation (Hyperledger Caliper)
 
-Documentation of the MedVault-X chaincode performance benchmark, for the
+Documentation of the MedVault chaincode performance benchmark, for the
 paper's evaluation section and for reproducibility. Full setup/run
 instructions are in `caliper-benchmarks/README.md`; this document covers
 methodology, results, and interpretation.
 
 ## What Was Benchmarked
 
-Four representative chaincode operations, spanning reads and writes,
-single-org and cross-org:
+Four chaincode operations actually configured in
+`caliper-benchmarks/benchmark-config.yaml` and implemented in
+`caliper-benchmarks/workloads/`, spanning one read and three writes:
 
 | Operation | Type | Endorsement policy |
 |---|---|---|
 | `CheckActiveTreatmentRelationship` | Read | `OR(HospitalMSP)` |
 | `CreateTreatmentRelationship` | Write | `OR(HospitalMSP)` |
 | `CreateConsultation` | Write, PDC | `OR(HospitalMSP)` |
-| `HasActiveConsent` | Read, cross-org PDC | `OR(HospitalMSP, PharmacyMSP)` |
+| `CreatePrescription` | Write, PDC | `OR(HospitalMSP)` |
 
-`HasActiveConsent` is the headline architectural benchmark — it exercises
-the project's core novel claim (consent-gated cross-org PDC access), not
-just generic throughput.
+Note: `HasActiveConsent` (`CHECK_ACTIVE_CONSENT` in
+`chaincode/policy/policy_registry.go`) is a real, implemented chaincode
+function with a cross-org policy (`HospitalMSP`, `PharmacyMSP`,
+`LaboratoryMSP`, `GovernanceMSP`, `ResearchMSP`), but it was **not**
+included in this benchmark run — there is no corresponding round in
+`benchmark-config.yaml` and no `workloads/hasActiveConsent.js`. It is a
+good candidate for a follow-up benchmark round but is not part of the
+results below.
 
 ## Methodology
 
-- **Tool:** Hyperledger Caliper 0.6.x, Fabric Gateway binding
-  (`@hyperledger/fabric-gateway` 1.5.0)
-- **Load pattern:** fixed-rate TPS sweep — 10 / 50 / 100 / 200 / 500 TPS
-  per operation (20 rounds total)
-- **Workers:** two full runs performed, at 2 and 4 Caliper workers, to
-  separate real network-side saturation from client-side (benchmark tool)
-  bottlenecking — see Findings below for why this mattered
+- **Tool:** Hyperledger Caliper, Fabric Gateway binding
+  (`@hyperledger/fabric-gateway`)
+- **Load pattern:** fixed-rate TPS sweep per operation. The read runs at
+  100 / 200 / 500 TPS. Each write runs a dense ramp from 100 to 500 TPS
+  (100 / 200 / 250 / 300 / 350 / 400 / 450 / 500), chosen specifically to
+  resolve the saturation bend observed around the 200–500 TPS region.
+- **Workers:** 4 Caliper workers per round (`benchmark-config.yaml`);
+  findings on `CreateTreatmentRelationship`'s hard ceiling were confirmed
+  by comparing against a separate run at 2 workers, isolating a real
+  network-side limit from a client-side (benchmark tool) artifact.
 - **Network:** 5-organization Hyperledger Fabric network (Hospital,
   Pharmacy, Laboratory, Governance, Research), 1 peer per org, single
-  orderer, channel `medchannel`, chaincode `medvault`
-- **Ordering parameters** (`configtx.yaml`): `BatchTimeout: 2s`,
-  `MaxMessageCount: 10`, `PreferredMaxBytes: 512KB`
+  orderer, channel `medchannel`, chaincode `medvault`.
 - **Deployment topology — disclosed limitation:** all organizations,
   peers, and the orderer run as Docker Compose containers **on a single
   host**, not distributed hardware. Reported throughput/latency reflect
   resource contention on shared CPU/RAM, not independent per-node
-  capacity. This is standard for academic evaluation but should be stated
-  plainly, not left implicit.
+  capacity. This is standard for academic evaluation but is stated
+  plainly here rather than left implicit.
 
 ## Results
 
-### Reads scale without a ceiling found in this topology
+### The read operation scales without a ceiling found in this topology
 
-Both `CheckActiveTreatmentRelationship` and `HasActiveConsent` tracked
-their requested send rate almost exactly at every tier tested, including
-500 TPS (≈500 achieved throughput, <50ms latency throughout, zero
-failures). No saturation point was found for reads up to the tested
-ceiling.
+`CheckActiveTreatmentRelationship` tracks its requested send rate almost
+exactly at every tier tested, including 500 TPS (≈500 achieved
+throughput, ≈10ms latency throughout, zero failures). No saturation
+point was found for this read up to the tested ceiling.
 
-### Writes: two very different outcomes
+### Writes: one hard ceiling, two soft ones
 
-Comparing the 2-worker and 4-worker runs at the 500 TPS tier reveals a
-genuine network-side finding, not a benchmark artifact:
+The three write operations diverge sharply from the read, and from each
+other:
 
-| Operation | 2 workers @ 500tps tier | 4 workers @ 500tps tier |
+| Operation | Observed plateau | Failures in tested range |
 |---|---|---|
-| `CreateTreatmentRelationship` | send 185.0 → throughput 182.5, 0 fail | send 328.5 → throughput **179.8**, **129 fail** |
-| `CreateConsultation` | send 199.9 → throughput 197.6, 0 fail | send 316.1 → throughput **288.5**, 0 fail |
+| `CreateTreatmentRelationship` | ~180–225 TPS, throughput *declines* past this point | Yes — 10–15% at the highest tested rates |
+| `CreateConsultation` | ~330–340 TPS | None observed |
+| `CreatePrescription` | ~330–340 TPS | None observed |
 
-**`CreateTreatmentRelationship` hit a real, named Fabric limit.** Doubling
-client-side load pressure did not increase real committed throughput at
-all — it plateaued at ~180 TPS and produced failures instead, with the
-exact error:
+**`CreateTreatmentRelationship` hit a real, named Fabric limit.**
+Comparing the 2-worker and 4-worker runs shows that additional
+client-side pressure did not raise real committed throughput past
+~180–225 TPS — it produced more failures instead, with the exact error:
 ```
 EndorseError: 2 UNKNOWN: too many requests for /gateway.Gateway,
 exceeding concurrency limit (500)
@@ -73,25 +80,24 @@ exceeding concurrency limit (500)
 This is the peer Gateway's own concurrency protection triggering, not a
 misconfiguration — a citable, reproducible saturation point.
 
-**`CreateConsultation` has a higher, not-yet-found ceiling.** More client
-pressure produced more real throughput (197 → 289 TPS) with zero
-failures, meaning its true limit sits somewhere above what was tested
-here.
+**`CreateConsultation` and `CreatePrescription` have higher, not-yet-found
+ceilings.** Both plateau around 330–340 TPS with zero failures in the
+tested range, meaning their true breaking point (as opposed to their
+practical plateau here) sits above what was tested in this evaluation.
 
-### Explaining the elevated latency at low TPS
+### Efficiency frontier (throughput vs. latency)
 
-With `MaxMessageCount: 10`, blocks cut by transaction **count**, not the
-2-second `BatchTimeout`, at every tested rate (10 TPS already fills a
-10-transaction block in ~1s, well under 2s — the timeout never actually
-triggers in this data).
-
-The mechanism is fully quantifiable: a transaction's average ordering
-wait ≈ half the time needed to fill a block by count.
-- At 10 TPS: block fills in ~1s → predicted avg wait ≈0.5s (observed: 0.47-0.49s)
-- At 50 TPS: block fills in ~0.2s → predicted avg wait ≈0.1s + fixed overhead (observed: 0.14-0.18s)
-
-This matches observed data closely and is presentable as a verified,
-quantitative explanation rather than a qualitative guess.
+`CheckActiveTreatmentRelationship` stays flat at ~10ms latency across its
+entire throughput range — reads pay no latency penalty for higher load in
+this topology. Each write shows a near-flat "efficient" region followed
+by a sharp latency spike once throughput stops increasing:
+`CreateConsultation` and `CreatePrescription` both hold latency under
+~100–150ms up to their ~330–340 TPS plateau before rising toward ~0.2–0.5s;
+`CreateTreatmentRelationship` is the most severe, with latency climbing
+past 1.4s once throughput plateaus near 180–225 TPS. The latency spike on
+each write curve is the network absorbing excess load as queueing delay
+rather than converting it into additional committed throughput — the
+defining signature of a real saturation point.
 
 ## Baseline Comparison
 
@@ -112,6 +118,16 @@ context.
 
 ## Figures
 
-`send_rate_vs_throughput.{png,pdf}` and `send_rate_vs_latency.{png,pdf}`
-(generated via `caliper-benchmarks/plot_caliper_results.py`) — PNG at
-300 DPI for slides, PDF (vector) for camera-ready print submission.
+Generated via `caliper-benchmarks/plot_caliper_results.py` into
+`caliper-benchmarks/figures/` (PNG at 300 DPI for slides, PDF vector for
+camera-ready print submission):
+
+- `send_rate_vs_throughput.{png,pdf}` — target send rate vs. achieved
+  throughput, all four operations
+- `throughput_vs_latency.{png,pdf}` — efficiency frontier
+- `send_rate_vs_failure_rate.{png,pdf}` — failure rate onset
+- `latency_min_avg_max_per_operation.{png,pdf}` — per-operation min/avg/max
+  latency small multiples
+
+See `caliper-benchmarks/figures/PERFORMANCE_FIGURES.md` for the
+figure-by-figure writeup these results are drawn from.
