@@ -4,7 +4,7 @@ generate_paper_figures.py
 Standalone reporting script -- NOT part of the live anomalyWorker.js path.
 Produces static PNG figures for the IEEE paper from files already written
 by the existing pipeline scripts. Doesn't re-fit anything by default; reads
-the CSVs isolation_forest_baseline.py / lstm_sequence_model.py already
+the CSVs pyod_ensemble.py / lstm_sequence_model.py already
 produce, so figures stay consistent with whatever run you point it at.
 
 Figures:
@@ -22,10 +22,16 @@ Figures:
   4. pr_roc_curve.png           -- precision-recall + ROC, eval-only,
                                     requires the synthetic `label` column
                                     (skipped automatically on real data)
+  5. priority_breakdown.png     -- P1/P2/none counts from priority_tagging.py's
+                                    output (only if --priority-in given) --
+                                    reflects the actual DEPLOYED two-tier
+                                    decision, not just the upstream ensemble
+                                    score
 
 Usage:
     python generate_paper_figures.py \
         --scored scored_features.csv \
+        --priority-in prioritized_flags.csv \
         --lstm-loss lstm_loss.csv \
         --out-dir figures/
 """
@@ -56,7 +62,7 @@ def plot_score_distribution(df: pd.DataFrame, out_path: str):
     else:
         ax.hist(df["anomaly_score"], bins=40, color="#4C72B0")
 
-    ax.set_xlabel("Isolation Forest anomaly score (higher = more anomalous)")
+    ax.set_xlabel("Ensemble anomaly score (higher = more anomalous)")
     ax.set_ylabel("actor-day windows")
     ax.set_title("Anomaly score distribution")
     fig.tight_layout()
@@ -67,13 +73,13 @@ def plot_score_distribution(df: pd.DataFrame, out_path: str):
 
 def plot_feature_importance(df: pd.DataFrame, out_path: str):
     """Bar chart of mean |contribution| per feature, aggregated from the
-    top_features JSON column that isolation_forest_baseline.py already
+    top_features JSON column that pyod_ensemble.py already
     writes per-row (top-3 SHAP contributions per row, not all 7 features
     per row). This is a proxy for a true SHAP summary/beeswarm plot, which
     would need the full per-row shap_values matrix -- not persisted to CSV
     today, since only the top-3 per row are needed for the flag's
     topFeatures field in production. Good enough for a paper bar chart of
-    "what drives anomaly flags overall"; re-run isolation_forest_baseline.py
+    "what drives anomaly flags overall"; re-run pyod_ensemble.py
     with a --shap-matrix-out flag (not implemented) if a true beeswarm plot
     is needed later.
     """
@@ -124,7 +130,7 @@ def plot_lstm_loss(loss_path: str, out_path: str):
 def plot_pr_roc(df: pd.DataFrame, out_path: str):
     """Eval-only -- requires the synthetic `label` ground-truth column.
     Automatically skipped on real (unlabeled) audit data, same guard
-    isolation_forest_baseline.py already uses."""
+    pyod_ensemble.py already uses."""
     if "label" not in df.columns or not (df["label"] == "anomalous").any():
         print("No synthetic 'anomalous' labels present -- skipping pr_roc_curve.png "
               "(this is expected on real audit data).")
@@ -158,10 +164,52 @@ def plot_pr_roc(df: pd.DataFrame, out_path: str):
     print(f"Wrote {out_path}")
 
 
+def plot_priority_breakdown(df: pd.DataFrame, out_path: str):
+    """Bar chart of P1_high_confidence / P2_sequence_candidate / none counts
+    from priority_tagging.py's output, split by ground-truth label when
+    available. Distinct from plot_score_distribution() (ensemble anomaly_score
+    only) -- this represents the actual DEPLOYED two-tier decision, not just
+    the upstream ensemble score, so it's the more accurate "what does the
+    system actually flag" figure for the paper."""
+    if "priority" not in df.columns:
+        print("No 'priority' column present -- skipping priority_breakdown.png "
+              "(pass --priority-in prioritized_flags.csv, from priority_tagging.py's --out)")
+        return
+
+    tiers = ["P1_high_confidence", "P2_sequence_candidate", "none"]
+    has_labels = "label" in df.columns and df["label"].notna().any()
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    x = np.arange(len(tiers))
+
+    if has_labels:
+        normal_counts = [((df["priority"] == t) & (df["label"] != "anomalous")).sum() for t in tiers]
+        anomalous_counts = [((df["priority"] == t) & (df["label"] == "anomalous")).sum() for t in tiers]
+        width = 0.35
+        ax.bar(x - width / 2, normal_counts, width, label="normal", color="#4C72B0")
+        ax.bar(x + width / 2, anomalous_counts, width, label="anomalous", color="#C44E52")
+        ax.legend()
+    else:
+        counts = [(df["priority"] == t).sum() for t in tiers]
+        ax.bar(x, counts, color="#4C72B0")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(["P1\n(high confidence)", "P2\n(sequence candidate)", "none\n(not flagged)"])
+    ax.set_ylabel("actor-day windows")
+    ax.set_title("Two-tier priority breakdown")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150)
+    plt.close(fig)
+    print(f"Wrote {out_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--scored", default="scored_features.csv",
-                         help="output of isolation_forest_baseline.py (--out)")
+                         help="output of pyod_ensemble.py (--out)")
+    parser.add_argument("--priority-in", default=None,
+                         help="output of priority_tagging.py (--out) -- optional, adds "
+                              "priority_breakdown.png reflecting the actual deployed two-tier system")
     parser.add_argument("--lstm-loss", default=None,
                          help="output of lstm_sequence_model.py's --loss-out (optional)")
     parser.add_argument("--out-dir", default="figures")
@@ -174,6 +222,13 @@ def main():
     plot_score_distribution(df, os.path.join(args.out_dir, "score_distribution.png"))
     plot_feature_importance(df, os.path.join(args.out_dir, "feature_importance.png"))
     plot_pr_roc(df, os.path.join(args.out_dir, "pr_roc_curve.png"))
+
+    if args.priority_in:
+        priority_df = pd.read_csv(args.priority_in)
+        plot_priority_breakdown(priority_df, os.path.join(args.out_dir, "priority_breakdown.png"))
+    else:
+        print("No --priority-in provided -- skipping priority_breakdown.png. "
+              "Generate one via: python priority_tagging.py --out prioritized_flags.csv ...")
 
     if args.lstm_loss:
         plot_lstm_loss(args.lstm_loss, os.path.join(args.out_dir, "lstm_loss_curve.png"))

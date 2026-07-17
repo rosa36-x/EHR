@@ -2,10 +2,9 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import * as grpc from "@grpc/grpc-js";
-import pkg from "@hyperledger/fabric-gateway";
+import * as fabricGateway from "@hyperledger/fabric-gateway";
 
-const { connect, signers } = pkg;
-
+const { connect, signers } = fabricGateway;
 /**
  * Org configurations.
  * keyPath is auto-resolved via glob for non-hospital orgs

@@ -34,11 +34,14 @@ router.get("/", async (req, res) => {
  *   - byStatus: counts for a PENDING/CONFIRMED/DISMISSED breakdown (pie/donut)
  *   - byDay: flags created per day, last 30 days (trend line)
  *   - topActors: actors with the most CONFIRMED flags (bar chart)
- *   - scoreDistribution: bucketed ifScore histogram
+ *   - scoreDistribution: bucketed ifScore (ensemble anomaly_score) histogram
+ *   - byPriority: P1_high_confidence vs P2_sequence_candidate counts -- see
+ *     priority_tagging.py; P2 is the lower-confidence, LSTM-driven tier and
+ *     should be shown/labeled separately, not folded into one flagged count
  */
 router.get("/summary", async (req, res) => {
     try {
-        const [byStatus, byDay, topActors, allScores] = await Promise.all([
+        const [byStatus, byDay, topActors, byPriority, allScores] = await Promise.all([
             AnomalyFlag.aggregate([
                 { $group: { _id: "$status", count: { $sum: 1 } } },
             ]),
@@ -52,6 +55,9 @@ router.get("/summary", async (req, res) => {
                 { $group: { _id: { actorID: "$actorID", actorOrg: "$actorOrg" }, count: { $sum: 1 } } },
                 { $sort: { count: -1 } },
                 { $limit: 10 },
+            ]),
+            AnomalyFlag.aggregate([
+                { $group: { _id: "$priority", count: { $sum: 1 } } },
             ]),
             AnomalyFlag.find({}, { ifScore: 1 }).lean(),
         ]);
@@ -68,6 +74,7 @@ router.get("/summary", async (req, res) => {
                 byStatus: Object.fromEntries(byStatus.map((r) => [r._id, r.count])),
                 byDay: byDay.map((r) => ({ date: r._id, count: r.count })),
                 topActors: topActors.map((r) => ({ actorID: r._id.actorID, actorOrg: r._id.actorOrg, count: r.count })),
+                byPriority: Object.fromEntries(byPriority.map((r) => [r._id ?? "unknown", r.count])),
                 scoreDistribution: [
                     { range: "0.0–0.2", count: buckets[0] },
                     { range: "0.2–0.4", count: buckets[1] },

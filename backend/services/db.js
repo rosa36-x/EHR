@@ -162,13 +162,15 @@ auditLogMirrorSchema.index({ timestamp: 1 });
 auditLogMirrorSchema.index({ actorID: 1, timestamp: 1 });
 
 /**
- * AnomalyFlag — output of the anomaly detection pipeline (Isolation Forest
- * + LSTM combined score, SHAP explanation). The flag itself is also logged
- * on-chain via logAudit() with actorRole "ai_engine" (see
- * anomalyDetectionService.js) -- auditID here links back to that entry as
- * proof the flag was actually raised then, not fabricated later. Anything
- * beyond {score, status} is too rich/variable-shaped for the fixed
- * AuditLog struct, which is why it lives here instead of on-chain.
+ * AnomalyFlag — output of the anomaly detection pipeline (5-model PyOD
+ * ensemble + LSTM, combined via a two-tier priority system -- see
+ * priority_tagging.py -- NOT a single blended score; a linear blend was
+ * found to suppress LSTM's signal on sequence-type anomalies specifically).
+ * The flag itself is also logged on-chain via logAudit() with actorRole
+ * "ai_engine" (see anomalyDetectionService.js) -- auditID here links back
+ * to that entry as proof the flag was actually raised then, not fabricated
+ * later. Anything beyond {score, status} is too rich/variable-shaped for
+ * the fixed AuditLog struct, which is why it lives here instead of on-chain.
  */
 const anomalyFlagSchema = new mongoose.Schema({
     flagID:        { type: String, required: true, unique: true },
@@ -176,17 +178,19 @@ const anomalyFlagSchema = new mongoose.Schema({
     actorRole:     { type: String, required: true },
     actorOrg:      { type: String, default: "" },
     date:          { type: String, required: true }, // the actor-day window this flag covers
-    ifScore:       { type: Number, required: true },
-    lstmScore:     { type: Number, default: null },
-    combinedScore: { type: Number, required: true },
+    ifScore:       { type: Number, required: true }, // 5-model PyOD ensemble's anomaly_score (name kept for schema/migration compat -- it's the ensemble score, not solo Isolation Forest -- see pyod_ensemble.py)
+    lstmScore:     { type: Number, default: null },  // LSTM's max_z_surprisal, now populated live (was always null pre-priority-system)
+    combinedScore: { type: Number, required: true }, // whichever of the two scores drove this flag's tier (ensemble score for P1, lstm score for P2) -- NOT a weighted blend
+    // Which tier fired: P1 = ensemble anomaly_score >= its own p97; P2 =
+    // LSTM max_z_surprisal >= its own p99 AND not already P1 (dedup, P1
+    // wins). See priority_tagging.py for the full rationale + thresholds.
+    priority:      { type: String, enum: ["P1_high_confidence", "P2_sequence_candidate"], required: true },
     topFeatures:   { type: [mongoose.Schema.Types.Mixed], default: [] }, // SHAP output: [{feature, contribution}, ...]
     // Classification taxonomy (see AI_MODEL_ROADMAP.md for the full 4-type
-    // spec). Only "point" and "emergency_abuse" are actually detected today.
-    // "sequential" (LSTM session model) and "ai_entity" (rogue/compromised
-    // AI-model actor) are documented future work, not scored here -- see
-    // roadmap for why (undertrained LSTM on live volume; no AI-model actor
-    // identity exists in the system yet).
-    classification: { type: String, enum: ["point", "emergency_abuse"], default: "point" },
+    // spec). "sequential" now detected live (P2 tier, LSTM-driven) --
+    // "ai_entity" (rogue/compromised AI-model actor) remains future work,
+    // since no AI-model actor identity exists in the system yet.
+    classification: { type: String, enum: ["point", "emergency_abuse", "sequential"], default: "point" },
     status:        { type: String, enum: ["PENDING", "CONFIRMED", "DISMISSED"], default: "PENDING" },
     auditID:       { type: String, required: true }, // links to the on-chain ANOMALY_FLAGGED entry
     reviewedBy:    { type: String, default: null },   // Governance actorID

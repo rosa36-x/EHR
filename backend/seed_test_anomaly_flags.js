@@ -43,6 +43,7 @@ async function upsertFlag(flagID, overrides = {}) {
             ifScore: 0.5,
             lstmScore: null,
             combinedScore: 0.5,
+            priority: "P1_high_confidence",
             topFeatures: [{ feature: "off_hours_ratio", contribution: 0.2 }],
             classification: "point",
             status: "PENDING",

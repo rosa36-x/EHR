@@ -29,13 +29,26 @@ const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
 // the resulting repeat detections cleanly.
 const SCAN_WINDOW_HOURS = Number(process.env.ANOMALY_SCAN_WINDOW_HOURS ?? 24);
 
-// combined/anomaly_score threshold above which a PENDING flag gets created.
-// LSTM is deliberately NOT part of the live worker's default score — see
-// combine_scores.py's docstring for the empirical reason (IF alone
-// outperformed the IF+LSTM blend in testing so far). isolation_forest_baseline.py's
-// anomaly_score is used directly. Re-introduce combine_scores.py here if a
-// future re-test with more data shows LSTM earning its place.
-const FLAG_THRESHOLD = Number(process.env.ANOMALY_FLAG_THRESHOLD ?? 0.15);
+// Extra history pulled ONLY for LSTM's autoregressive context, not for
+// flagging -- lstm_sequence_model.py scores this whole lookback (so events
+// in the new SCAN_WINDOW_HOURS window get real prior context instead of an
+// empty <START>) but --report-since means only the new window's actor-days
+// actually get reported/flagged. Mitigates (doesn't eliminate) the
+// "every run resets context" issue -- an actor silent longer than this
+// lookback still hits a cold start. See lstm_sequence_model.py's
+// score_new() docstring.
+const LSTM_CONTEXT_LOOKBACK_DAYS = Number(process.env.ANOMALY_LSTM_LOOKBACK_DAYS ?? 14);
+
+// P97/P99 percentile thresholds are no longer computed live -- they're
+// fixed values written to thresholds.json by retrain_pipeline.sh (a batch
+// job, run separately from this worker) and loaded by priority_tagging.py
+// via --thresholds-in. Recomputing a percentile from this worker's own
+// small SCAN_WINDOW_HOURS pull would be statistically meaningless. Models
+// themselves are also no longer refit every cycle -- pyod_ensemble.py and
+// lstm_sequence_model.py run in --mode score, loading what
+// retrain_pipeline.sh already fit and saved here.
+const MODEL_DIR = process.env.ANOMALY_MODEL_DIR
+    ?? path.join(PYTHON_DIR, "models");
 
 // Confirmed (Governance-reviewed, not raw ML) flags within this rolling
 // window before an OrgActor gets temporarily banned. Deliberately gated on
@@ -65,24 +78,46 @@ function toCSV(rows, columns) {
     return [header, ...body].join("\n");
 }
 
+function parseCSVLine(line) {
+    // Proper quoted-field state machine -- the previous regex splitter
+    // (`(".*?"|[^,]+)`) breaks on quoted fields containing an internal
+    // comma that directly follows a closing quote (e.g. JSON like
+    // `"...x"", "y"...`), which is exactly top_features's shape. That
+    // regex would stop at the JSON's own comma, not the real field
+    // boundary, silently shifting every later column left by one.
+    const fields = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (inQuotes) {
+            if (c === '"') {
+                if (line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+                else inQuotes = false;
+            } else {
+                cur += c;
+            }
+        } else if (c === '"') {
+            inQuotes = true;
+        } else if (c === ",") {
+            fields.push(cur);
+            cur = "";
+        } else {
+            cur += c;
+        }
+    }
+    fields.push(cur);
+    return fields;
+}
+
 function parseCSV(text) {
     const lines = text.trim().split("\n");
     if (lines.length === 0) return [];
-    const header = lines[0].split(",");
+    const header = parseCSVLine(lines[0]);
     return lines.slice(1).map((line) => {
-        // Simple splitter -- adequate for this script's own output, which
-        // only quotes the JSON-string top_features column. A field-aware
-        // CSV parser dependency would be overkill for one column; JSON.parse
-        // on that column still works fine through the quoting below.
-        const values = line.match(/(".*?"|[^,]+)(?=,|$)/g) ?? [];
+        const values = parseCSVLine(line);
         const row = {};
-        header.forEach((h, i) => {
-            let v = values[i] ?? "";
-            if (v.startsWith('"') && v.endsWith('"')) {
-                v = v.slice(1, -1).replace(/""/g, '"');
-            }
-            row[h] = v;
-        });
+        header.forEach((h, i) => { row[h] = values[i] ?? ""; });
         return row;
     });
 }
@@ -147,17 +182,17 @@ async function classifyFlag(actorID, date) {
 
 /**
  * Pulls the last SCAN_WINDOW_HOURS of AuditLogMirror data, runs it through
- * feature_engineering.py + isolation_forest_baseline.py, and creates a
- * PENDING AnomalyFlag (+ on-chain ANOMALY_FLAGGED audit entry + warning
- * notification) for every actor-day scoring above FLAG_THRESHOLD that
- * doesn't already have one.
+ * feature_engineering.py + pyod_ensemble.py + lstm_sequence_model.py +
+ * priority_tagging.py, and creates a PENDING AnomalyFlag (+ on-chain
+ * ANOMALY_FLAGGED audit entry + warning notification) for every actor-day
+ * with priority P1 or P2 that doesn't already have one.
  *
  * Also logs the detection run itself as an audited "ai_engine" access --
  * this is the AI reading patient-derived data to make a prediction, and
  * that access deserves the same trail as any other actor's, same as any
  * other AI model (disease predictors, etc.) that reads this data should.
  */
-export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
+export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") {
     const runID = generateID("anomalyFlag") + "-run";
     const since = new Date(Date.now() - SCAN_WINDOW_HOURS * 3600 * 1000).toISOString();
 
@@ -176,14 +211,35 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
         return { flagsCreated: 0 };
     }
 
+    // Extra lookback for LSTM CONTEXT ONLY -- the ensemble's feature_engineering.py
+    // input stays on the narrow `since` window (aggregate daily features don't need
+    // history). Only fetched once we know there's actually new data to score, since
+    // it's a second, larger query. --report-since (below) tells lstm_sequence_model.py
+    // to score this whole range (correct autoregressive context) but only return
+    // actor-days on or after `since` -- see its score_new() docstring.
+    const contextSince = new Date(Date.now() - LSTM_CONTEXT_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
+    const contextEvents = await AuditLogMirror.find({ timestamp: { $gte: contextSince } }).lean();
+
+    const requiredArtifacts = ["pyod_ensemble_model.joblib", "lstm_model.pt", "thresholds.json"];
+    const missing = requiredArtifacts.filter((f) => !fs.existsSync(path.join(MODEL_DIR, f)));
+    if (missing.length > 0) {
+        console.error(`[Anomaly] Missing model artifacts in ${MODEL_DIR}: ${missing.join(", ")}. `
+            + `Run retrain_pipeline.sh first.`);
+        return { flagsCreated: 0 };
+    }
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anomaly-"));
-    const rawPath      = path.join(tmpDir, "raw.csv");
-    const featuresPath = path.join(tmpDir, "features.csv");
-    const scoredPath   = path.join(tmpDir, "scored.csv");
+    const rawPath        = path.join(tmpDir, "raw.csv");
+    const rawContextPath = path.join(tmpDir, "raw_context.csv");
+    const featuresPath   = path.join(tmpDir, "features.csv");
+    const scoredPath     = path.join(tmpDir, "scored.csv");
+    const lstmPath       = path.join(tmpDir, "lstm_scored.csv");
+    const priorityPath   = path.join(tmpDir, "prioritized.csv");
 
     try {
         const columns = ["auditID", "actorID", "actorRole", "actorOrg", "action", "resourceType", "resourceID", "timestamp"];
         fs.writeFileSync(rawPath, toCSV(events, columns));
+        fs.writeFileSync(rawContextPath, toCSV(contextEvents, columns));
 
         await execFileAsync(PYTHON_BIN, [
             path.join(PYTHON_DIR, "feature_engineering.py"),
@@ -193,17 +249,47 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
         ]);
 
         await execFileAsync(PYTHON_BIN, [
-            path.join(PYTHON_DIR, "isolation_forest_baseline.py"),
+            path.join(PYTHON_DIR, "pyod_ensemble.py"),
             "--in", featuresPath,
             "--out", scoredPath,
+            "--mode", "score",
+            "--model-in", path.join(MODEL_DIR, "pyod_ensemble_model.joblib"),
         ]);
 
-        const scoredRows = parseCSV(fs.readFileSync(scoredPath, "utf8"));
+        // LSTM runs against the RAW event log (needs actual timestamps/order),
+        // not the aggregated featuresPath. No "label" column on real data --
+        // lstm_sequence_model.py falls back to "unknown" for that (see fix).
+        await execFileAsync(PYTHON_BIN, [
+            path.join(PYTHON_DIR, "lstm_sequence_model.py"),
+            "--in", rawContextPath,
+            "--out", lstmPath,
+            "--mode", "score",
+            "--model-in", path.join(MODEL_DIR, "lstm_model.pt"),
+            "--report-since", since,
+        ]);
+
+        await execFileAsync(PYTHON_BIN, [
+            path.join(PYTHON_DIR, "priority_tagging.py"),
+            "--ensemble-in", scoredPath,
+            "--lstm-in", lstmPath,
+            "--out", priorityPath,
+            "--thresholds-in", path.join(MODEL_DIR, "thresholds.json"),
+        ]);
+
+        const scoredRows = parseCSV(fs.readFileSync(priorityPath, "utf8"));
         let flagsCreated = 0;
 
         for (const row of scoredRows) {
-            const score = Number(row.anomaly_score);
-            if (!(score >= FLAG_THRESHOLD)) continue;
+            if (row.priority === "none") continue;
+
+            const ensembleScore = Number(row.ensemble_score);
+            const lstmScore = row.lstm_score !== undefined && row.lstm_score !== ""
+                ? Number(row.lstm_score) : null;
+            // P1 is driven by the ensemble score, P2 by LSTM's -- this is
+            // NOT a weighted blend, each tier fires on its own threshold
+            // (see priority_tagging.py). combinedScore records whichever
+            // score actually drove this flag's tier, for display purposes.
+            const combinedScore = row.priority === "P1_high_confidence" ? ensembleScore : lstmScore;
 
             const existing = await AnomalyFlag.findOne({
                 actorID: row.actorID,
@@ -231,7 +317,10 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
                 actorOrg,
             });
 
-            const classification = await classifyFlag(row.actorID, row.date);
+            const isEmergencyOverlap = await classifyFlag(row.actorID, row.date);
+            const classification = isEmergencyOverlap === "emergency_abuse"
+                ? "emergency_abuse"
+                : (row.priority === "P2_sequence_candidate" ? "sequential" : "point");
 
             // Violations 1-2: this actor's Nth flag overall (any status),
             // counted BEFORE this one is saved. See CLARIFICATION_FLAG_COUNT
@@ -245,9 +334,10 @@ export async function runDetectionCycle(modelVersion = "isolation_forest_v1") {
                 actorRole,
                 actorOrg,
                 date: row.date,
-                ifScore: score,
-                lstmScore: null,
-                combinedScore: score,
+                ifScore: ensembleScore,
+                lstmScore,
+                combinedScore,
+                priority: row.priority,
                 topFeatures,
                 classification,
                 status: "PENDING",
@@ -372,7 +462,10 @@ async function sendAuthorityReport(actor) {
 
     const lines = confirmedFlags.map((f) => {
         const features = f.topFeatures.map((t) => `${t.feature} (${t.contribution})`).join(", ");
-        return `  - ${f.date} | score ${f.ifScore.toFixed(3)} | ${features} | on-chain auditID: ${f.auditID}`;
+        const tierLabel = f.priority === "P2_sequence_candidate" ? "P2 (sequence)" : "P1 (high-confidence)";
+        const lstmPart = f.lstmScore != null ? `, lstm ${f.lstmScore.toFixed(3)}` : "";
+        return `  - ${f.date} | ${tierLabel} | ensemble ${f.ifScore.toFixed(3)}${lstmPart} | `
+            + `${features} | on-chain auditID: ${f.auditID}`;
     });
 
     const text = [

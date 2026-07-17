@@ -154,6 +154,7 @@ router.post("/resolve-biometric", authenticate, async (req, res) => {
         fullName: bioResult.fullName,
     });
 });
+
 router.get("/", authenticate, async (req, res) => {
     if (req.user.role !== "doctor") {
         return res.status(403).json({ status: "ACCESS_DENIED", message: "Only doctors can search patients." });

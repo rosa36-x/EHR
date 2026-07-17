@@ -57,25 +57,39 @@ def top_shap_features(shap_row: np.ndarray, feature_names: list, top_n: int = 3)
     top = [{"feature": feature_names[i], "contribution": round(float(contributions[i]), 4)} for i in order]
     return json.dumps(top)
 
+def split_train_holdout(df: pd.DataFrame, train_frac: float = 0.8) -> pd.DataFrame:
+    """Chronological per-actor split, same rationale as lstm_sequence_model.py:
+    fit only on each actor's earliest train_frac of actor-day rows; mark the
+    rest as held_out=True. Requires an actorID + date (or sortable date-like
+    column) in df."""
+    df = df.sort_values(["actorID", "date"]).reset_index(drop=True)
+    df["held_out"] = False
+    for actor_id, group in df.groupby("actorID"):
+        cutoff = max(1, int(len(group) * train_frac))
+        holdout_idx = group.index[cutoff:]
+        df.loc[holdout_idx, "held_out"] = True
+    return df
 
-def fit_and_score(df: pd.DataFrame, contamination):
-    X = df[FEATURE_COLUMNS].values
+def fit_and_score(df: pd.DataFrame, contamination, train_frac: float = 0.8):
+    df = split_train_holdout(df, train_frac=train_frac)
+
+    train_df = df[~df["held_out"]]
+    X_train = train_df[FEATURE_COLUMNS].values
+    X_all = df[FEATURE_COLUMNS].values
 
     model = IsolationForest(
         n_estimators=200,
-        contamination=contamination,  # "auto" or a float estimate of anomaly rate
+        contamination=contamination,
         random_state=42,
     )
-    model.fit(X)
+    model.fit(X_train)
 
-    # decision_function: higher = more normal. Flip sign so higher = more anomalous,
-    # which is the more intuitive direction for an "anomaly score".
-    raw_scores = -model.decision_function(X)
-    predictions = model.predict(X)  # -1 = anomaly, 1 = normal
+    raw_scores = -model.decision_function(X_all)
+    predictions = model.predict(X_all)
 
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
-    top_features = [top_shap_features(shap_values[i], FEATURE_COLUMNS) for i in range(len(X))]
+    shap_values = explainer.shap_values(X_all)
+    top_features = [top_shap_features(shap_values[i], FEATURE_COLUMNS) for i in range(len(X_all))]
 
     df = df.copy()
     df["anomaly_score"] = raw_scores
@@ -84,24 +98,16 @@ def fit_and_score(df: pd.DataFrame, contamination):
     return df, model
 
 
-def evaluate(df: pd.DataFrame):
+def evaluate(df: pd.DataFrame, label_suffix: str = ""):
     y_true = (df["label"] == "anomalous").astype(int)
     y_score = df["anomaly_score"]
     y_pred = df["predicted_anomaly"].astype(int)
 
-    print("\n=== Classification report (IsolationForest's own -1/1 threshold) ===")
+    print(f"\n=== Classification report{label_suffix} (IsolationForest's own -1/1 threshold) ===")
     print(classification_report(y_true, y_pred, target_names=["normal", "anomalous"], zero_division=0))
 
     ap = average_precision_score(y_true, y_score)
-    print(f"Average precision (score-based, threshold-independent): {ap:.3f}")
-
-    precision, recall, thresholds = precision_recall_curve(y_true, y_score)
-    print("\nPrecision/recall at a few score thresholds:")
-    for target_recall in [0.9, 0.75, 0.5]:
-        idx = np.argmin(np.abs(recall - target_recall))
-        print(f"  recall~={recall[idx]:.2f} -> precision={precision[idx]:.2f} "
-              f"(score threshold~={thresholds[min(idx, len(thresholds)-1)]:.3f})")
-
+    print(f"Average precision{label_suffix} (score-based, threshold-independent): {ap:.3f}")
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -110,6 +116,9 @@ def main():
                          help="'auto' or a float like 0.02 (estimated anomaly rate)")
     parser.add_argument("--out", default="scored_features.csv")
     parser.add_argument("--top-n", type=int, default=10, help="print top-N highest-scored windows")
+    parser.add_argument("--train-frac", type=float, default=0.8,
+                         help="fraction of each actor's chronological actor-day rows used to fit; "
+                              "rest held out and scored but never fit on")
     args = parser.parse_args()
 
     contamination = args.contamination
@@ -117,14 +126,24 @@ def main():
         contamination = float(contamination)
 
     df = pd.read_csv(args.infile)
-    scored, model = fit_and_score(df, contamination)
+    scored, model = fit_and_score(df, contamination, train_frac=args.train_frac)
 
     if "label" in scored.columns and (scored["label"] == "anomalous").any():
-        evaluate(scored)
+        print("\n" + "=" * 70)
+        print("METRICS INCLUDING TRAINING DATA (may be optimistic)")
+        print("=" * 70)
+        evaluate(scored, label_suffix=" [ALL]")
+
+        holdout = scored[scored["held_out"]]
+        print("\n" + "=" * 70)
+        print(f"METRICS ON HELD-OUT DATA ONLY (leakage-free, n={len(holdout)}) -- report this one")
+        print("=" * 70)
+        if (holdout["label"] == "anomalous").sum() == 0:
+            print("No held-out anomalous rows -- try a lower --train-frac.")
+        else:
+            evaluate(holdout, label_suffix=" [HELD-OUT]")
     else:
-        print("\nNo synthetic 'anomalous' labels present (real audit data, or a "
-              "run with zero injected anomalies) -- skipping eval metrics, which "
-              "need ground truth. Scoring/SHAP output below is unaffected.")
+        print("\nNo synthetic 'anomalous' labels present -- skipping eval metrics.")
 
     scored_sorted = scored.sort_values("anomaly_score", ascending=False)
     print(f"\n=== Top {args.top_n} highest-scored actor-day windows ===")

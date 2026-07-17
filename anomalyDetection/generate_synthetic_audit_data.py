@@ -89,6 +89,8 @@ LAB_PANELS = {l: random.sample(PATIENT_IDS, k=20) for l in LAB_ACTOR_IDS}
 # Everything else gets its own fabricated resource ID (see fake_resource_id).
 RESOURCE_ID_IS_PATIENT_ID = {"CONSENT", "PATIENT"}
 
+BUSINESS_END_HOUR = 18  # 6pm, exclusive -- mirrors feature_engineering.py's constant
+
 
 def fake_resource_id(resource_type: str, patient_id: str, rng: random.Random) -> str:
     """A resourceID distinct from patientID, for resource types where the
@@ -328,6 +330,107 @@ def inject_dispense_without_read(days, rng):
     return rows
 
 
+def inject_order_composition_anomaly(days, rng):
+    """Order-only anomaly: same actor role (doctor), same patient panel
+    (own panel, NOT broadened -- see inject_broad_access_burst for that
+    variant), same action/resourceType/org vocabulary and relative
+    weights as normal_doctor_events, same business-hours timing
+    distribution (business_hours_ts) and same per-tick event-count range
+    (1-6) as normal traffic. The ONLY difference: actions are drawn via a
+    fixed round-robin rotation through the same 8 combos instead of an
+    independent random.choice() per tick.
+
+    Intent: leave every IsolationForest feature (access_frequency,
+    distinct_resources_touched, off_hours_ratio, burst_count,
+    access_denied_ratio, consent_denied_ratio, dispense_without_read_count)
+    in normal range, so this is a genuine test of whether the LSTM's
+    next-token sequence model catches something IF's aggregate features
+    structurally cannot -- see combine_scores.py's module docstring for
+    the earlier informal version of this test, which this generator did
+    not previously implement.
+
+    Not a perfect guarantee of IF-blindness (validate empirically -- run
+    feature_engineering.py + isolation_forest_baseline.py after
+    regenerating and confirm these actor-days don't stand out on IF's
+    own features before trusting a comparison here).
+    """
+    rows = []
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
+    doctor = rng.choice(DOCTOR_IDS)
+    panel = DOCTOR_PANELS[doctor]
+
+    # Same 8 (action, resourceType, org) combos normal_doctor_events draws
+    # from, same relative frequency (uniform over the list) -- just a
+    # fixed rotation instead of independent random.choice per tick.
+    combos = [
+        ("CREATE", "CONSULTATION", ""),
+        ("READ", "CONSULTATION", ""),
+        ("CREATE", "REFERRAL", ""),
+        ("READ", "REFERRAL", ""),
+        ("CREATE", "PRESCRIPTION", "HospitalMSP"),
+        ("READ", "PRESCRIPTION", "HospitalMSP"),
+        ("READ", "LAB_REPORT", "HospitalMSP"),
+        ("READ", "PATIENT", ""),
+    ]
+
+    # Calibrated against normal_doctor_events' actual output distribution:
+    # a normal doctor-day's access_frequency is ~1-21 events (mean 5.8,
+    # measured from a 30-day baseline run). n_ticks=1-3 x n_events=1-6
+    # keeps this anomaly's total in that same range instead of standing
+    # out via raw volume, which would let IF catch it trivially.
+    n_ticks = rng.randint(1, 3)
+    idx = 0
+    for _ in range(n_ticks):
+        n_events = rng.randint(1, 6)  # same range as normal_doctor_events
+        for _ in range(n_events):
+            action, resource_type, org = combos[idx % len(combos)]
+            idx += 1
+            patient = rng.choice(panel)
+            ts = business_hours_ts(base_day, rng)
+            rows.append(make_row(doctor, "doctor", org, action, resource_type,
+                                  patient, ts, "anomalous", rng))
+    return rows
+
+
+def inject_stale_dispense_bigram_violation(days, rng):
+    """Single-transition bigram-violation anomaly, distinct from the
+    periodicity-based inject_order_composition_anomaly above: a pharmacy
+    org_actor reads a prescription then dispenses (UPDATE) the SAME
+    resourceID -- so feature_engineering.py's dispense_without_read_count
+    is unaffected, unlike inject_dispense_without_read -- but with an
+    abnormally long gap (3-6h) between read and dispense instead of the
+    1-15 minutes every legitimate dispense in normal_org_actor_events
+    takes. Every legit dispense token ("org_actor|UPDATE|PRESCRIPTION|
+    <bucket>") only ever appears with bucket in {"<1m","1-5m","5-30m"}
+    across all of normal traffic; this produces that exact token with
+    bucket "2-8h" instead -- a transition genuinely absent from training
+    data, unlike periodicity, which next-token surprisal cannot represent
+    at all regardless of training. This IS representable by next-token
+    surprisal, making it the clean positive-case counterpart to that
+    earlier negative result.
+    """
+    rows = []
+    base_day = datetime(2026, 1, 1) + timedelta(days=safe_burst_day_offset(days, rng))
+    actor = rng.choice(PHARMACY_ACTOR_IDS)
+    patient = rng.choice(PHARM_PANELS[actor])
+    rid = fake_resource_id("PRESCRIPTION", patient, rng)
+
+    ts1 = base_day.replace(hour=rng.randint(8, 10), minute=rng.randint(0, 59), second=rng.randint(0, 59))
+    gap_seconds = rng.randint(3 * 3600, 6 * 3600)  # whole seconds only -- avoids
+    # fractional-hour floats introducing microseconds into ts2, which broke
+    # pd.to_datetime's format inference against the rest of the (whole-second)
+    # dataset when this used rng.uniform(3, 6) + timedelta(hours=...) instead.
+    ts2 = ts1 + timedelta(seconds=gap_seconds)
+    if ts2.hour >= BUSINESS_END_HOUR:
+        ts2 = ts2.replace(hour=rng.randint(14, BUSINESS_END_HOUR - 1))
+
+    rows.append(make_row(actor, "org_actor", "PharmacyMSP", "READ", "PRESCRIPTION",
+                          patient, ts1, "anomalous", rng, resource_id=rid))
+    rows.append(make_row(actor, "org_actor", "PharmacyMSP", "UPDATE", "PRESCRIPTION",
+                          patient, ts2, "anomalous", rng, resource_id=rid))
+    return rows
+
+
 def generate(days, seed=42, n_bursts=None):
     rng = random.Random(seed)
     rows = generate_normal_traffic(days, rng)
@@ -339,6 +442,16 @@ def generate(days, seed=42, n_bursts=None):
         rows += inject_consent_probe_spree(days, rng)
         rows += inject_cross_org_denied_no_consent(days, rng)
         rows += inject_dispense_without_read(days, rng)
+
+        order_rows = inject_order_composition_anomaly(days, rng)
+        for r in order_rows:
+            r["anomaly_type"] = "order_composition"
+        rows += order_rows
+
+        bigram_rows = inject_stale_dispense_bigram_violation(days, rng)
+        for r in bigram_rows:
+            r["anomaly_type"] = "bigram_violation"
+        rows += bigram_rows
 
     df = pd.DataFrame(rows)
     df["timestamp"] = pd.to_datetime(df["timestamp"])

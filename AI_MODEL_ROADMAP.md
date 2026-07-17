@@ -102,13 +102,28 @@ meaningfully.
   `POST /anomalies/:id/respond` in `routes/anomalyResponse.js`).
 - Standalone paper figures (`generate_paper_figures.py`): score
   distribution, feature importance, PR/ROC, LSTM loss curve.
+- **5-model PyOD ensemble** (replacing solo Isolation Forest) + **LSTM,
+  combined via a two-tier priority system** (P1 high-confidence /
+  P2 sequence-candidate), both live in `anomalyWorker.js` -- see
+  `AI_MODEL_EVALUATION_NOTES.md`'s "5-Model Ensemble + Two-Tier Priority
+  System" section for the full selection/combining rationale.
+  `sequential` classification is now LIVE (P2 tier), not deferred.
+- **Train/score split**: `pyod_ensemble.py`/`lstm_sequence_model.py`
+  support `--mode train` (batch, `retrain_pipeline.sh`) vs `--mode score`
+  (live worker, no refitting). Fixes the original design's "refit from
+  scratch every hourly cycle on a tiny window" problem.
+- **LSTM rolling context window**: live scoring pulls extra history
+  (`ANOMALY_LSTM_LOOKBACK_DAYS`, default 14) purely as autoregressive
+  context (`--report-since` in `lstm_sequence_model.py`), so burn-in
+  mostly lands in the context portion instead of eating into the actual
+  reportable window. Mitigates, doesn't eliminate, the cold-start issue
+  below.
 
 **Deferred / not built:**
-- `sequential` classification (LSTM session model) -- excluded from the
-  live worker; empirically underperformed IF-alone in testing so far, and
-  needs more real production volume before retraining per-cycle is worth
-  the added latency. `lstm_sequence_model.py` still exists standalone for
-  offline eval/figures.
+- **Persistent per-actor hidden state across scoring runs** (see "LSTM
+  Persistent State" roadmap section below) -- the rolling context window
+  is a mitigation, not a full fix; an actor silent longer than the
+  lookback window still hits a cold start every run.
 - `ai_entity` classification (rogue/compromised AI model actor) -- no
   AI-model-as-registered-actor identity exists in the system yet
   (ResearchMSP is still a skeleton org). Needs that identity model built
@@ -117,4 +132,52 @@ meaningfully.
   (`ANOMALY_INTERVAL_MINUTES`); detection is windowed (actor-day) regardless
   of ingestion latency, so this buys latency, not new detection capability.
 - Frontend charts consuming `GET /anomalies/summary` -- backend endpoint
-  is ready, UI not built.
+  now also returns `byPriority` (P1/P2 split), UI still not built.
+- `retrain_pipeline.sh` scheduling -- script exists, nothing runs it
+  automatically yet; needs a cron/systemd timer entry (suggested: weekly).
+- Priority-aware chart in `generate_paper_figures.py` -- currently shows
+  ensemble-only `anomaly_score` distribution; a P1-vs-P2 breakdown chart
+  would better represent the deployed two-tier design but wasn't built.
+
+## LSTM Persistent State (Option 2 -- not started)
+
+The rolling context window (implemented) mitigates but doesn't solve the
+underlying issue: LSTM surprisal depends on autoregressive history, and
+every scoring run currently rebuilds that history from a lookback window
+rather than truly persisting state. An actor silent longer than
+`ANOMALY_LSTM_LOOKBACK_DAYS` still gets scored from a cold `<START>`.
+
+Full fix requires:
+
+1. **Per-actor hidden-state storage.** Persist each actor's LSTM
+   `(h, c)` tensor state between runs (new Mongo collection or a
+   serialized blob store), keyed by `actorID`. Replace `score_new()`'s
+   whole-sequence forward pass with incremental single-step inference
+   (feed only the NEW events since last run, seeded with the actor's
+   saved hidden state).
+2. **Cold-start policy for new/unseen actors** -- no saved state yet,
+   fall back to the current lookback-window approach (or a
+   fresh `<START>`) until enough history accumulates.
+3. **Staleness policy** -- decide when a saved hidden state is too old
+   to trust (e.g. actor inactive 30+ days): reset to cold-start rather
+   than resuming from a stale/meaningless state.
+4. **Retrain interaction** -- a retrained model's weights are
+   incompatible with hidden states saved under the old weights. Either
+   invalidate all saved states on every retrain (simplest, forces a
+   fresh cold-start pass immediately after each `retrain_pipeline.sh`
+   run), or version state blobs against a model version and only reuse
+   matching ones.
+5. **Re-validate the P2 threshold.** Incremental-state scoring will
+   shift the surprisal distribution (likely lower/more stable per-event
+   surprisal than whole-sequence batch scoring produces). The current
+   p99 threshold (see `thresholds.json`) was calibrated against
+   whole-sequence scoring and should NOT be assumed to transfer --
+   re-run the same threshold sweep methodology (`check_lstm_threshold.py`
+   pattern) against incremental-scoring output before trusting it.
+
+Step 5 is the part most likely to be skipped under time pressure and
+shouldn't be -- shipping incremental scoring with an unvalidated
+threshold undermines the two-tier design's actual point. Estimated
+effort: substantially more than the rolling-context-window mitigation;
+treat as a dedicated work session with real before/after validation,
+not a bolt-on.
