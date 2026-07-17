@@ -43,8 +43,29 @@ router.get("/:auditID", authenticate, async (req, res) => {
         if (client)  client.close();
     }
 });
+/**
+ * GET /audit-history?patientID=...
+ * List audit entries for the logged-in patient (their own actions and
+ * anything done to their records), or for the logged-in doctor.
+ */
 router.get("/", authenticate, async (req, res) => {
-    const result = await svc.getAuditLogsByActor(req.user.id);
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    let gateway, client;
+    try {
+        const result = await getContract("governance");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+
+        const fn = req.user.role === "doctor" ? "GetAuditLogsByActor" : "GetAuditLogsByActor";
+        const raw = await contract.evaluateTransaction(fn, req.user.id);
+        const data = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+
+        return res.json({ status: "SUCCESS", data });
+    } catch (err) {
+        return res.status(500).json({ status: "FAILED", message: err.message });
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
 });
 export default router;

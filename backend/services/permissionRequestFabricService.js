@@ -269,7 +269,8 @@ export async function getPermissionRequestsByPatient(patientID) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("GetPermissionRequestsByPatient", patientID);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const rawStr = Buffer.from(raw).toString("utf8");
+return { status: "SUCCESS", data: rawStr ? JSON.parse(rawStr) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {
@@ -286,7 +287,8 @@ export async function getPermissionRequestsByDoctor(doctorID) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("GetPermissionRequestsByDoctor", doctorID);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const rawStr = Buffer.from(raw).toString("utf8");
+return { status: "SUCCESS", data: rawStr ? JSON.parse(rawStr) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {

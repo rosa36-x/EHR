@@ -180,3 +180,20 @@ export async function revokeConsent(consentID, actorID) {
         if (client)  client.close();
     }
 }
+export async function getConsentsByPatient(patientID, actorID, actorRole) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+        const raw = await contract.evaluateTransaction("GetConsentsByPatient", patientID);
+        const rawStr = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: rawStr ? JSON.parse(rawStr) : [] };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
