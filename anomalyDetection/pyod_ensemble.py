@@ -70,6 +70,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import joblib
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import average_precision_score, classification_report
 
@@ -139,6 +140,7 @@ def fit_and_score(df: pd.DataFrame, contamination: float, train_frac: float = 0.
     normalized_scores = []
     vote_matrix = []
     fitted_models = {}
+    score_min_max = {}
 
     for name, build in MODEL_BUILDERS.items():
         model = build(contamination)
@@ -146,6 +148,7 @@ def fit_and_score(df: pd.DataFrame, contamination: float, train_frac: float = 0.
         fitted_models[name] = model
 
         raw_scores = model.decision_function(X_all)
+        score_min_max[name] = (float(raw_scores.min()), float(raw_scores.max()))
         normalized_scores.append(min_max_normalize(raw_scores))
 
         preds = model.predict(X_all)  # 1 = anomalous, 0 = normal
@@ -166,7 +169,67 @@ def fit_and_score(df: pd.DataFrame, contamination: float, train_frac: float = 0.
     z_all = (X_all_raw - train_mean) / train_std
     df["top_features"] = [top_zscore_features(z_all[i], FEATURE_COLUMNS) for i in range(len(z_all))]
 
-    return df, fitted_models
+    artifacts = {
+        "scaler": scaler,
+        "models": fitted_models,
+        "score_min_max": score_min_max,
+        "train_mean": train_mean,
+        "train_std": train_std,
+        "feature_columns": FEATURE_COLUMNS,
+    }
+    return df, artifacts
+
+
+def save_artifacts(artifacts: dict, ensemble_threshold: float, path: str):
+    payload = dict(artifacts)
+    payload["ensemble_threshold"] = ensemble_threshold
+    joblib.dump(payload, path)
+
+
+def load_artifacts(path: str) -> dict:
+    return joblib.load(path)
+
+
+def score_new(df: pd.DataFrame, artifacts: dict) -> pd.DataFrame:
+    """Score NEW data with an ALREADY-FITTED ensemble -- no fitting, no
+    train/holdout split, no re-derived normalization range. This is what
+    the live worker should call every cycle; fit_and_score (train mode)
+    is a periodic batch job run separately -- see retrain_pipeline.sh.
+    Refitting from scratch on a tiny rolling window (as the live worker
+    did before this) throws away the validated model for a noisy one fit
+    on a few hours of data, and recomputed percentile thresholds on that
+    same tiny window are statistically meaningless.
+    """
+    feature_columns = artifacts["feature_columns"]
+    scaler = artifacts["scaler"]
+    models = artifacts["models"]
+    score_min_max = artifacts["score_min_max"]
+    train_mean = artifacts["train_mean"]
+    train_std = artifacts["train_std"]
+
+    X_raw = df[feature_columns].values
+    X_scaled = scaler.transform(X_raw)  # transform only, scaler already fit
+
+    normalized_scores = []
+    vote_matrix = []
+    for name, model in models.items():
+        raw_scores = model.decision_function(X_scaled)
+        lo, hi = score_min_max[name]
+        norm = np.zeros_like(raw_scores) if hi == lo else (raw_scores - lo) / (hi - lo)
+        norm = np.clip(norm, 0.0, 1.0)  # new data can exceed the training range
+        normalized_scores.append(norm)
+        vote_matrix.append(model.predict(X_scaled))  # uses model's OWN fit-time threshold
+
+    normalized_scores = np.vstack(normalized_scores)
+    vote_matrix = np.vstack(vote_matrix)
+
+    df = df.copy()
+    df["anomaly_score"] = normalized_scores.mean(axis=0)
+    df["votes"] = vote_matrix.sum(axis=0)
+
+    z = (X_raw - train_mean) / train_std
+    df["top_features"] = [top_zscore_features(z[i], feature_columns) for i in range(len(z))]
+    return df
 
 
 def evaluate(df: pd.DataFrame, label_suffix: str = ""):
@@ -196,10 +259,30 @@ def main():
     parser.add_argument("--vote-threshold", type=int, default=4,
                          help="number of models (out of 5) that must flag a row for "
                               "predicted_anomaly=True; see module docstring for the 3 vs 4 vs 5 tradeoff")
+    parser.add_argument("--mode", choices=["train", "score"], default="train",
+                         help="train: fit fresh on --in (batch job, e.g. retrain_pipeline.sh, needs a "
+                              "large historical window). score: load --model-in, score --in with NO "
+                              "refitting (what the live worker should call every cycle -- refitting on "
+                              "a small rolling window every run throws away the validated model).")
+    parser.add_argument("--model-out", default="pyod_ensemble_model.joblib",
+                         help="[train mode] where to save the fitted scaler+models+thresholds")
+    parser.add_argument("--model-in", default="pyod_ensemble_model.joblib",
+                         help="[score mode] fitted artifact to load")
+    parser.add_argument("--ensemble-percentile", type=float, default=0.97,
+                         help="[train mode] percentile of anomaly_score saved as the P1 threshold "
+                              "for priority_tagging.py to use in score mode")
     args = parser.parse_args()
 
     df = pd.read_csv(args.infile)
-    scored, models = fit_and_score(
+
+    if args.mode == "score":
+        artifacts = load_artifacts(args.model_in)
+        scored = score_new(df, artifacts)
+        scored.to_csv(args.out, index=False)
+        print(f"[score mode] Scored {len(scored)} rows using {args.model_in} -> {args.out}")
+        return
+
+    scored, artifacts = fit_and_score(
         df, args.contamination, train_frac=args.train_frac, vote_threshold=args.vote_threshold
     )
 
@@ -237,6 +320,11 @@ def main():
 
     scored_sorted.to_csv(args.out, index=False)
     print(f"\nWrote full scored table to {args.out}")
+
+    ensemble_threshold = float(scored["anomaly_score"].quantile(args.ensemble_percentile))
+    save_artifacts(artifacts, ensemble_threshold, args.model_out)
+    print(f"[train mode] Saved fitted ensemble + P1 threshold ({ensemble_threshold:.4f} "
+          f"@ p{args.ensemble_percentile*100:.0f}) to {args.model_out}")
 
 
 if __name__ == "__main__":

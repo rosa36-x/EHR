@@ -49,13 +49,15 @@ Usage:
 """
 
 import argparse
+import json
 
 import pandas as pd
 from sklearn.metrics import classification_report
 
 
 def tag_priority(ensemble_df: pd.DataFrame, lstm_df: pd.DataFrame,
-                  ensemble_percentile: float, lstm_score_col: str, lstm_percentile: float) -> pd.DataFrame:
+                  ensemble_percentile: float, lstm_score_col: str, lstm_percentile: float,
+                  ensemble_threshold: float = None, lstm_threshold: float = None) -> pd.DataFrame:
     ensemble_df = ensemble_df.copy()
     lstm_df = lstm_df.copy()
     ensemble_df["date"] = ensemble_df["date"].astype(str)
@@ -85,10 +87,19 @@ def tag_priority(ensemble_df: pd.DataFrame, lstm_df: pd.DataFrame,
 
     # LSTM threshold fit on the FULL lstm_df distribution -- what a
     # production system would actually use, not re-fit per evaluation slice.
-    lstm_threshold = lstm_df[lstm_score_col].quantile(lstm_percentile)
+    # Fixed thresholds (persisted from a training run -- see
+    # pyod_ensemble.py/lstm_sequence_model.py's --mode train --model-out)
+    # take precedence. Recomputing a percentile from whatever's in
+    # ensemble_df/lstm_df is only meaningful for a large, representative
+    # dataset (offline benchmarking) -- on the live worker's small rolling
+    # window it would be statistically meaningless, which is the whole
+    # reason these can now be passed in as fixed values instead.
+    if lstm_threshold is None:
+        lstm_threshold = lstm_df[lstm_score_col].quantile(lstm_percentile)
     merged["lstm_score"] = merged["lstm_score"].fillna(merged["lstm_score"].min())
 
-    ensemble_threshold = ensemble_df["anomaly_score"].quantile(ensemble_percentile)
+    if ensemble_threshold is None:
+        ensemble_threshold = ensemble_df["anomaly_score"].quantile(ensemble_percentile)
     p1 = merged["ensemble_score"] >= ensemble_threshold
     p2 = (merged["lstm_score"] >= lstm_threshold) & ~p1  # dedup: P1 wins ties
 
@@ -124,8 +135,28 @@ def main():
     parser.add_argument("--ensemble-percentile", type=float, default=0.97)
     parser.add_argument("--lstm-score-col", default="max_z_surprisal")
     parser.add_argument("--lstm-percentile", type=float, default=0.99)
+    parser.add_argument("--ensemble-threshold", type=float, default=None,
+                         help="fixed P1 threshold value (e.g. from pyod_ensemble.py's saved "
+                              "artifacts). Overrides --ensemble-percentile when given -- use this "
+                              "for live scoring, percentile mode is for offline benchmarking only.")
+    parser.add_argument("--lstm-threshold", type=float, default=None,
+                         help="fixed P2 threshold value (e.g. from lstm_sequence_model.py's saved "
+                              "artifacts). Overrides --lstm-percentile when given.")
+    parser.add_argument("--thresholds-in", default=None,
+                         help="JSON file with {\"ensemble_threshold\":..,\"lstm_threshold\":..} -- "
+                              "written by retrain_pipeline.sh after training both models. Convenience "
+                              "for the live worker: one file instead of two separate float args. "
+                              "Overrides --ensemble-threshold/--lstm-threshold if both are given.")
     parser.add_argument("--top-n", type=int, default=10)
     args = parser.parse_args()
+
+    ensemble_threshold = args.ensemble_threshold
+    lstm_threshold = args.lstm_threshold
+    if args.thresholds_in:
+        with open(args.thresholds_in) as f:
+            thresholds = json.load(f)
+        ensemble_threshold = thresholds["ensemble_threshold"]
+        lstm_threshold = thresholds["lstm_threshold"]
 
     ensemble_df = pd.read_csv(args.ensemble_in)
     lstm_df = pd.read_csv(args.lstm_in)
@@ -135,6 +166,8 @@ def main():
         ensemble_percentile=args.ensemble_percentile,
         lstm_score_col=args.lstm_score_col,
         lstm_percentile=args.lstm_percentile,
+        ensemble_threshold=ensemble_threshold,
+        lstm_threshold=lstm_threshold,
     )
 
     if "label" in tagged.columns and (tagged["label"] == "anomalous").any():

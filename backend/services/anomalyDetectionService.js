@@ -29,15 +29,26 @@ const PYTHON_BIN = process.env.PYTHON_BIN ?? "python3";
 // the resulting repeat detections cleanly.
 const SCAN_WINDOW_HOURS = Number(process.env.ANOMALY_SCAN_WINDOW_HOURS ?? 24);
 
-// P97 percentile threshold on the ensemble's own anomaly_score for a P1
-// flag; P99 percentile on LSTM's own max_z_surprisal for a P2 flag. NOT a
-// single blended-score threshold anymore -- see priority_tagging.py's
-// docstring: a linear blend of ensemble+LSTM scores was found to suppress
-// LSTM's contribution specifically on sequence-type anomalies (its one
-// job), because averaging two differently-scaled signals lets a model
-// that's structurally blind to a case dilute one that isn't.
-const ENSEMBLE_PERCENTILE = Number(process.env.ANOMALY_ENSEMBLE_PERCENTILE ?? 0.97);
-const LSTM_PERCENTILE = Number(process.env.ANOMALY_LSTM_PERCENTILE ?? 0.99);
+// Extra history pulled ONLY for LSTM's autoregressive context, not for
+// flagging -- lstm_sequence_model.py scores this whole lookback (so events
+// in the new SCAN_WINDOW_HOURS window get real prior context instead of an
+// empty <START>) but --report-since means only the new window's actor-days
+// actually get reported/flagged. Mitigates (doesn't eliminate) the
+// "every run resets context" issue -- an actor silent longer than this
+// lookback still hits a cold start. See lstm_sequence_model.py's
+// score_new() docstring.
+const LSTM_CONTEXT_LOOKBACK_DAYS = Number(process.env.ANOMALY_LSTM_LOOKBACK_DAYS ?? 14);
+
+// P97/P99 percentile thresholds are no longer computed live -- they're
+// fixed values written to thresholds.json by retrain_pipeline.sh (a batch
+// job, run separately from this worker) and loaded by priority_tagging.py
+// via --thresholds-in. Recomputing a percentile from this worker's own
+// small SCAN_WINDOW_HOURS pull would be statistically meaningless. Models
+// themselves are also no longer refit every cycle -- pyod_ensemble.py and
+// lstm_sequence_model.py run in --mode score, loading what
+// retrain_pipeline.sh already fit and saved here.
+const MODEL_DIR = process.env.ANOMALY_MODEL_DIR
+    ?? path.join(PYTHON_DIR, "models");
 
 // Confirmed (Governance-reviewed, not raw ML) flags within this rolling
 // window before an OrgActor gets temporarily banned. Deliberately gated on
@@ -200,16 +211,35 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
         return { flagsCreated: 0 };
     }
 
+    // Extra lookback for LSTM CONTEXT ONLY -- the ensemble's feature_engineering.py
+    // input stays on the narrow `since` window (aggregate daily features don't need
+    // history). Only fetched once we know there's actually new data to score, since
+    // it's a second, larger query. --report-since (below) tells lstm_sequence_model.py
+    // to score this whole range (correct autoregressive context) but only return
+    // actor-days on or after `since` -- see its score_new() docstring.
+    const contextSince = new Date(Date.now() - LSTM_CONTEXT_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
+    const contextEvents = await AuditLogMirror.find({ timestamp: { $gte: contextSince } }).lean();
+
+    const requiredArtifacts = ["pyod_ensemble_model.joblib", "lstm_model.pt", "thresholds.json"];
+    const missing = requiredArtifacts.filter((f) => !fs.existsSync(path.join(MODEL_DIR, f)));
+    if (missing.length > 0) {
+        console.error(`[Anomaly] Missing model artifacts in ${MODEL_DIR}: ${missing.join(", ")}. `
+            + `Run retrain_pipeline.sh first.`);
+        return { flagsCreated: 0 };
+    }
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "anomaly-"));
-    const rawPath      = path.join(tmpDir, "raw.csv");
-    const featuresPath = path.join(tmpDir, "features.csv");
-    const scoredPath   = path.join(tmpDir, "scored.csv");
-    const lstmPath     = path.join(tmpDir, "lstm_scored.csv");
-    const priorityPath = path.join(tmpDir, "prioritized.csv");
+    const rawPath        = path.join(tmpDir, "raw.csv");
+    const rawContextPath = path.join(tmpDir, "raw_context.csv");
+    const featuresPath   = path.join(tmpDir, "features.csv");
+    const scoredPath     = path.join(tmpDir, "scored.csv");
+    const lstmPath       = path.join(tmpDir, "lstm_scored.csv");
+    const priorityPath   = path.join(tmpDir, "prioritized.csv");
 
     try {
         const columns = ["auditID", "actorID", "actorRole", "actorOrg", "action", "resourceType", "resourceID", "timestamp"];
         fs.writeFileSync(rawPath, toCSV(events, columns));
+        fs.writeFileSync(rawContextPath, toCSV(contextEvents, columns));
 
         await execFileAsync(PYTHON_BIN, [
             path.join(PYTHON_DIR, "feature_engineering.py"),
@@ -222,6 +252,8 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
             path.join(PYTHON_DIR, "pyod_ensemble.py"),
             "--in", featuresPath,
             "--out", scoredPath,
+            "--mode", "score",
+            "--model-in", path.join(MODEL_DIR, "pyod_ensemble_model.joblib"),
         ]);
 
         // LSTM runs against the RAW event log (needs actual timestamps/order),
@@ -229,8 +261,11 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
         // lstm_sequence_model.py falls back to "unknown" for that (see fix).
         await execFileAsync(PYTHON_BIN, [
             path.join(PYTHON_DIR, "lstm_sequence_model.py"),
-            "--in", rawPath,
+            "--in", rawContextPath,
             "--out", lstmPath,
+            "--mode", "score",
+            "--model-in", path.join(MODEL_DIR, "lstm_model.pt"),
+            "--report-since", since,
         ]);
 
         await execFileAsync(PYTHON_BIN, [
@@ -238,8 +273,7 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
             "--ensemble-in", scoredPath,
             "--lstm-in", lstmPath,
             "--out", priorityPath,
-            "--ensemble-percentile", String(ENSEMBLE_PERCENTILE),
-            "--lstm-percentile", String(LSTM_PERCENTILE),
+            "--thresholds-in", path.join(MODEL_DIR, "thresholds.json"),
         ]);
 
         const scoredRows = parseCSV(fs.readFileSync(priorityPath, "utf8"));
@@ -428,7 +462,10 @@ async function sendAuthorityReport(actor) {
 
     const lines = confirmedFlags.map((f) => {
         const features = f.topFeatures.map((t) => `${t.feature} (${t.contribution})`).join(", ");
-        return `  - ${f.date} | score ${f.ifScore.toFixed(3)} | ${features} | on-chain auditID: ${f.auditID}`;
+        const tierLabel = f.priority === "P2_sequence_candidate" ? "P2 (sequence)" : "P1 (high-confidence)";
+        const lstmPart = f.lstmScore != null ? `, lstm ${f.lstmScore.toFixed(3)}` : "";
+        return `  - ${f.date} | ${tierLabel} | ensemble ${f.ifScore.toFixed(3)}${lstmPart} | `
+            + `${features} | on-chain auditID: ${f.auditID}`;
     });
 
     const text = [

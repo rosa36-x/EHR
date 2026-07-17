@@ -38,6 +38,7 @@ import torch.nn as nn
 from sklearn.metrics import average_precision_score, classification_report
 
 START_TOKEN = "<START>"
+UNK_TOKEN = "<UNK>"
 
 # Time-since-last-event buckets. Folding time into the token vocabulary
 # (rather than feeding it as a separate scalar) means the model's
@@ -91,7 +92,7 @@ def build_actor_sequences(df: pd.DataFrame):
 
 
 def build_vocab(sequences):
-    tokens = {START_TOKEN}
+    tokens = {START_TOKEN, UNK_TOKEN}
     for seq in sequences.values():
         for token, _, _ in seq:
             tokens.add(token)
@@ -113,7 +114,11 @@ class NextEventLSTM(nn.Module):
         return self.out(h)  # (1, seq_len, vocab_size)
 
 def compute_holdout_loss(model, sequences, cutoffs, token_to_id):
-    """Avg CE loss on each actor's held-out (post-cutoff) events only, no grad update."""
+    """Avg CE loss on each actor's held-out (post-cutoff) events only, no grad
+    update. Returns None (not 0.0) when there's no genuine held-out data at
+    all (e.g. train_frac=1.0) -- 0.0 would look like a perfect score to the
+    early-stopping logic below and trigger stopping after 1 epoch, loading a
+    badly undertrained checkpoint. Caller must check for None."""
     start_id = token_to_id[START_TOKEN]
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
     total_loss, total_events = 0.0, 0
@@ -132,7 +137,9 @@ def compute_holdout_loss(model, sequences, cutoffs, token_to_id):
                 continue
             total_loss += loss_fn(ho_logits, ho_targets).item()
             total_events += len(ho_targets)
-    return total_loss / max(total_events, 1)
+    if total_events == 0:
+        return None
+    return total_loss / total_events
 
 def train(model, train_sequences, token_to_id, epochs=25, lr=1e-2,
           full_sequences=None, cutoffs=None, patience=5, checkpoint_path="lstm_best.pt"):
@@ -163,6 +170,24 @@ def train(model, train_sequences, token_to_id, epochs=25, lr=1e-2,
 
         if full_sequences is not None and cutoffs is not None:
             val_loss = compute_holdout_loss(model, full_sequences, cutoffs, token_to_id)
+            if val_loss is None:
+                # No genuine held-out data (e.g. train_frac=1.0, a real
+                # production retrain, not a benchmarking run) -- fall back to
+                # training-loss-based checkpointing instead of misreading a
+                # degenerate always-0.0 "held-out loss" as instant convergence.
+                val_loss_history.append(None)
+                print(f"  epoch {epoch+1}/{epochs} — train {avg_loss:.3f} "
+                      f"(no held-out data -- using train loss for checkpointing)")
+                if avg_loss < best_val_loss:
+                    best_val_loss, best_epoch, patience_counter = avg_loss, epoch + 1, 0
+                    torch.save(model.state_dict(), checkpoint_path)
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        print(f"  Early stopping at epoch {epoch+1} (best train loss "
+                              f"{best_val_loss:.3f} at epoch {best_epoch})")
+                        break
+                continue
             val_loss_history.append(val_loss)
             print(f"  epoch {epoch+1}/{epochs} — train {avg_loss:.3f}, held-out {val_loss:.3f}")
             if val_loss < best_val_loss:
@@ -178,6 +203,105 @@ def train(model, train_sequences, token_to_id, epochs=25, lr=1e-2,
             print(f"  epoch {epoch+1}/{epochs} — avg loss {avg_loss:.3f}")
 
     return loss_history, val_loss_history, best_epoch
+
+
+@torch.no_grad()
+def score_sequences_fixed_vocab(model, sequences, token_to_id):
+    """Like score_sequences, but for a model+vocab that are ALREADY
+    fitted/built (score mode) -- maps any token not seen during training
+    to UNK_TOKEN instead of raising KeyError."""
+    start_id = token_to_id[START_TOKEN]
+    unk_id = token_to_id[UNK_TOKEN]
+    rows = []
+    for actor_id, seq in sequences.items():
+        if len(seq) == 0:
+            continue
+        tokens = [t for t, _, _ in seq]
+        ids = [start_id] + [token_to_id.get(t, unk_id) for t in tokens]
+        input_ids = torch.tensor([ids[:-1]], dtype=torch.long)
+        target_ids = torch.tensor(ids[1:], dtype=torch.long)
+
+        logits = model(input_ids).squeeze(0)
+        log_probs = torch.log_softmax(logits, dim=-1)
+        surprisal = -log_probs[torch.arange(len(target_ids)), target_ids]
+
+        for (token, date, label), s in zip(seq, surprisal.tolist()):
+            rows.append({"actorID": actor_id, "date": date, "token": token,
+                         "surprisal": s, "label": label})
+    return pd.DataFrame(rows)
+
+
+def save_lstm_artifacts(model, token_to_id, embed_dim, hidden_dim, global_mean, global_std,
+                         lstm_threshold, path):
+    torch.save({
+        "model_state": model.state_dict(),
+        "token_to_id": token_to_id,
+        "embed_dim": embed_dim,
+        "hidden_dim": hidden_dim,
+        "global_mean": global_mean,
+        "global_std": global_std,
+        "lstm_threshold": lstm_threshold,
+    }, path)
+
+
+def load_lstm_artifacts(path):
+    return torch.load(path, weights_only=False)
+
+
+def score_new(df: pd.DataFrame, artifacts: dict, burn_in: int = 5, report_since=None) -> pd.DataFrame:
+    """Score NEW data with an ALREADY-TRAINED model -- no training, no
+    train/holdout split. z-scores against the GLOBAL surprisal baseline
+    from training (not a per-actor baseline recomputed from this tiny
+    live batch, which would be too noisy to mean anything).
+
+    report_since (optional date/datetime/ISO string): if given, `df` is
+    expected to include EXTRA history before this cutoff purely as
+    autoregressive CONTEXT -- scored normally (so later events get correct
+    history) but excluded from the returned rows. This is what lets the
+    live worker pull e.g. 14 days of lookback for context while only
+    creating flags for the actual new scan window: burn_in (dropping each
+    actor's first few events) now mostly lands inside the CONTEXT portion
+    instead of eating into the window we actually report on. Still not
+    full persistent hidden state across runs (see module docstring) -- an
+    actor quiet longer than the lookback window still hits a cold start --
+    but meaningfully better than scoring the new window in isolation.
+    """
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    sequences = build_actor_sequences(df)
+
+    model = NextEventLSTM(vocab_size=len(artifacts["token_to_id"]),
+                           embed_dim=artifacts["embed_dim"], hidden_dim=artifacts["hidden_dim"])
+    model.load_state_dict(artifacts["model_state"])
+    model.eval()
+
+    empty_cols = ["actorID", "date", "mean_surprisal", "max_surprisal",
+                  "mean_z_surprisal", "max_z_surprisal", "n_events", "label"]
+
+    event_scores = score_sequences_fixed_vocab(model, sequences, artifacts["token_to_id"])
+    if event_scores.empty:
+        return pd.DataFrame(columns=empty_cols)
+
+    event_scores["event_idx"] = event_scores.groupby("actorID").cumcount()
+    event_scores = event_scores[event_scores["event_idx"] >= burn_in]
+    if event_scores.empty:
+        return pd.DataFrame(columns=empty_cols)
+
+    event_scores["z_surprisal"] = (event_scores["surprisal"] - artifacts["global_mean"]) / artifacts["global_std"]
+
+    agg = event_scores.groupby(["actorID", "date"]).agg(
+        mean_surprisal=("surprisal", "mean"),
+        max_surprisal=("surprisal", "max"),
+        mean_z_surprisal=("z_surprisal", "mean"),
+        max_z_surprisal=("z_surprisal", "max"),
+        n_events=("surprisal", "size"),
+        label=("label", lambda s: "anomalous" if (s == "anomalous").any() else "normal"),
+    ).reset_index()
+
+    if report_since is not None:
+        cutoff_date = pd.to_datetime(report_since).date()
+        agg = agg[pd.to_datetime(agg["date"]).dt.date >= cutoff_date].reset_index(drop=True)
+    return agg
 
 
 def split_train_holdout(sequences, train_frac=0.8):
@@ -300,9 +424,34 @@ def main():
     parser.add_argument("--checkpoint", default="lstm_best.pt")
     parser.add_argument("--embed-dim", type=int, default=16)
     parser.add_argument("--hidden-dim", type=int, default=32)
+    parser.add_argument("--mode", choices=["train", "score"], default="train",
+                         help="train: fit fresh on --in (batch job, needs a large historical window, "
+                              "see retrain_pipeline.sh). score: load --model-in, score --in with NO "
+                              "training and a FIXED vocab/threshold (what the live worker should call).")
+    parser.add_argument("--model-out", default="lstm_model.pt",
+                         help="[train mode] where to save the trained model+vocab+threshold")
+    parser.add_argument("--model-in", default="lstm_model.pt",
+                         help="[score mode] trained artifact to load")
+    parser.add_argument("--lstm-percentile", type=float, default=0.99,
+                         help="[train mode] percentile of max_z_surprisal saved as the P2 threshold "
+                              "for priority_tagging.py to use in score mode")
+    parser.add_argument("--report-since", default=None,
+                         help="[score mode] ISO date/datetime. --in may include extra history before "
+                              "this cutoff purely as autoregressive CONTEXT (scored normally so later "
+                              "events get correct history, but excluded from --out). Lets the live "
+                              "worker pull e.g. 14 days of lookback for context while only flagging "
+                              "the actual new scan window -- see score_new()'s docstring.")
     args = parser.parse_args()
 
     df = pd.read_csv(args.infile)
+
+    if args.mode == "score":
+        artifacts = load_lstm_artifacts(args.model_in)
+        agg = score_new(df, artifacts, report_since=args.report_since)
+        agg.to_csv(args.out, index=False)
+        print(f"[score mode] Scored {len(agg)} actor-day rows using {args.model_in} -> {args.out}")
+        return
+
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     print("Building per-actor sequences...")
@@ -324,7 +473,12 @@ def main():
 
     if val_loss_history:
         model.load_state_dict(torch.load(args.checkpoint))
-        print(f"Loaded best checkpoint: epoch {best_epoch}, held-out loss {min(val_loss_history):.3f}")
+        real_val_losses = [v for v in val_loss_history if v is not None]
+        if real_val_losses:
+            print(f"Loaded best checkpoint: epoch {best_epoch}, held-out loss {min(real_val_losses):.3f}")
+        else:
+            print(f"Loaded best checkpoint: epoch {best_epoch} (selected by training loss -- "
+                  f"no held-out data was available, see train() docstring)")
 
     if args.loss_out:
         pd.DataFrame({"epoch": range(1, len(loss_history) + 1), "avg_loss": loss_history}) \
@@ -360,6 +514,15 @@ def main():
 
     agg.sort_values("max_z_surprisal", ascending=False).to_csv(args.out, index=False)
     print(f"\nWrote {len(agg)} actor-day rows to {args.out}")
+
+    burn_in_filtered = event_scores[event_scores["event_idx"] >= 5]
+    global_mean = float(burn_in_filtered["surprisal"].mean())
+    global_std = float(burn_in_filtered["surprisal"].std()) or 1e-6
+    lstm_threshold = float(agg["max_z_surprisal"].quantile(args.lstm_percentile))
+    save_lstm_artifacts(model, token_to_id, args.embed_dim, args.hidden_dim,
+                        global_mean, global_std, lstm_threshold, args.model_out)
+    print(f"[train mode] Saved trained model + P2 threshold ({lstm_threshold:.4f} "
+          f"@ p{args.lstm_percentile*100:.0f}) to {args.model_out}")
 
 
 if __name__ == "__main__":
