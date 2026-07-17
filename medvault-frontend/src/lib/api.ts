@@ -24,6 +24,23 @@ class ApiError extends Error {
     this.body = body;
   }
 }
+async function downloadFile(path: string, filename: string) {
+  const token = getAuthToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 async function request<T = any>(
   path: string,
@@ -171,7 +188,10 @@ export interface PatientRecord {
   patientID: string; fullName: string; dob: string; gender: string; phone: string; email: string;
 }
 export const patientApi = {
-  get: (patientID: string) => get<{ status: string; data: PatientRecord }>(`/patients/${patientID}`),
+  get: (patientID: string) =>
+    get<{ status: string; data: PatientRecord }>(`/patients/${patientID}`),
+  search: (query: string) =>
+    get<{ status: string; data: PatientRecord[] }>(`/patients?search=${encodeURIComponent(query)}`),
 };
 
 
@@ -199,7 +219,9 @@ export const consultationApi = {
       file,
     ),
   get: (id: string) => get(`/consultations/${id}`),
-  document: (id: string) => get(`/consultations/${id}/document`),
+  list: (patientID: string) =>
+    get<{ status: string; data: any[] }>(`/consultations?patientID=${patientID}`),
+  document: (id: string) => downloadFile(`/consultations/${id}/document`, `${id}.pdf`),
   update: (id: string, fields: Record<string, string>, file: File) =>
     postForm(`/consultations/${id}`, fields, file, "PUT"),
 };
@@ -216,8 +238,10 @@ export const prescriptionApi = {
     ),
   get: (id: string, org: "hospital" | "pharmacy" = "hospital") =>
     get(`/prescriptions/${id}?org=${org}`),
+  list: (patientID: string) =>
+    get<{ status: string; data: any[] }>(`/prescriptions?patientID=${patientID}`),
   document: (id: string, org: "hospital" | "pharmacy" = "hospital") =>
-    get(`/prescriptions/${id}/document?org=${org}`),
+    downloadFile(`/prescriptions/${id}/document?org=${org}`, `${id}.pdf`),
   updateStatus: (
     id: string,
     status: "ISSUED" | "DISPENSED" | "CANCELLED",
@@ -233,8 +257,10 @@ export const labReportApi = {
     postForm("/labreports", { reportID: genId("LAB"), ...fields }, file),
   get: (id: string, org: "laboratory" | "hospital" = "laboratory") =>
     get(`/labreports/${id}?org=${org}`),
+  list: (patientID: string) =>
+    get<{ status: string; data: any[] }>(`/labreports?patientID=${patientID}`),
   document: (id: string, org: "laboratory" | "hospital" = "laboratory") =>
-    get(`/labreports/${id}/document?org=${org}`),
+    downloadFile(`/labreports/${id}/document?org=${org}`, `${id}.pdf`),
 };
 
 export const referralApi = {
@@ -250,7 +276,9 @@ export const referralApi = {
   ) =>
     postForm("/referrals", { referralID: genId("REF"), ...fields }, file),
   get: (id: string) => get(`/referrals/${id}`),
-  document: (id: string) => get(`/referrals/${id}/document`),
+  list: (direction?: "from" | "to") =>
+    get<{ status: string; data: any[] }>(`/referrals${direction ? `?direction=${direction}` : ""}`),
+  document: (id: string) => downloadFile(`/referrals/${id}/document`, `${id}.pdf`),
 };
 
 // ── Consent ──────────────────────────────────────────────────────────────
@@ -290,6 +318,7 @@ export const treatmentRelationshipApi = {
     relationshipType: string;
     notes?: string;
   }) => post("/treatment-relationships", data),
+  list: () => get<{ status: string; data: any[] }>("/treatment-relationships"),
   get: (id: string) => get(`/treatment-relationships/${id}`),
   discharge: (id: string) => patch(`/treatment-relationships/${id}/discharge`),
   markDormant: (id: string) => patch(`/treatment-relationships/${id}/dormant`),

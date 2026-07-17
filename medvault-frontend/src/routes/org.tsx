@@ -10,6 +10,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  Download,
 } from "lucide-react";
 import {
   DashboardShell,
@@ -383,8 +384,22 @@ function LabMine() {
         )}
         {items.map((r) => (
           <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="text-sm font-semibold">{r.reportType}</div>
-            <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{r.reportType}</div>
+                <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => labReportApi.document(r.id, "laboratory").catch((err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
           </div>
         ))}
       </div>

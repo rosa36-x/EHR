@@ -154,5 +154,15 @@ router.post("/resolve-biometric", authenticate, async (req, res) => {
         fullName: bioResult.fullName,
     });
 });
-
+router.get("/", authenticate, async (req, res) => {
+    if (req.user.role !== "doctor") {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Only doctors can search patients." });
+    }
+    const { search } = req.query;
+    if (!search) {
+        return res.status(400).json({ status: "FAILED", message: "search query param is required." });
+    }
+    const result = await patientFabricService.searchPatientsByName(search);
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
 export default router;

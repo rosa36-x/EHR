@@ -43,5 +43,8 @@ router.get("/:auditID", authenticate, async (req, res) => {
         if (client)  client.close();
     }
 });
-
+router.get("/", authenticate, async (req, res) => {
+    const result = await svc.getAuditLogsByActor(req.user.id);
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
 export default router;

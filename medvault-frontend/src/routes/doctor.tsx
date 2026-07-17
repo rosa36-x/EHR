@@ -1,7 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { permissionRequestApi, ApiError,consultationApi, prescriptionApi,treatmentRelationshipApi,referralApi,emergencyApi,biometricApi   } from "@/lib/api";
+import { permissionRequestApi, ApiError,consultationApi, patientApi, prescriptionApi,treatmentRelationshipApi,referralApi,emergencyApi,biometricApi,auditApi,labReportApi,type PatientRecord } from "@/lib/api";
 import { getSession } from "@/lib/session";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SensitivityBadge } from "@/components/shared/sensitivity-badge";
 import {
   Activity,
   AlertTriangle,
@@ -15,6 +17,7 @@ import {
   Sparkles,
   Stethoscope,
   Users,
+  Download,
 } from "lucide-react";
 import {
   DashboardShell,
@@ -140,15 +143,7 @@ function DoctorDashboard() {
       {tab === "referrals" && <Referrals doctorID={session.id!} />}
       {tab === "permissions" && <PermissionsSent />}
       {tab === "emergency" && <EmergencyAccess doctorID={session.id!} />}
-      {tab === "audit" && (
-        <div className="space-y-4">
-          <SectionHeader
-            title="Audit history"
-            subtitle="Records you have accessed."
-          />
-          <AuditTimeline entries={mockAudit.filter((a) => a.actorRole === "Doctor")} />
-        </div>
-      )}
+      {tab === "audit" && <DoctorAuditView />}
     </DashboardShell>
   );
 }
@@ -217,102 +212,70 @@ function Stat({
 
 function PatientSearch() {
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<PatientListItem | null>(null);
-  const results = q
-    ? mockPatients.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q.toLowerCase()) ||
-          p.id.toLowerCase().includes(q.toLowerCase()),
-      )
-    : [];
+  const [results, setResults] = useState<PatientRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const search = () => {
+    if (!q) return;
+    setLoading(true);
+    patientApi.search(q).then((res) => {
+      setResults(res.data ?? []);
+      setSearched(true);
+    }).catch(() => {
+      setResults([]);
+      setSearched(true);
+    }).finally(() => setLoading(false));
+  };
+
   return (
     <div className="space-y-4">
-      <SectionHeader title="Patient search" subtitle="Search by patient ID or name." />
+      <SectionHeader title="Patient search" subtitle="Search by patient name." />
       <div className="flex gap-2">
         <Input
-          placeholder="e.g. PT-9001 or Priya"
+          placeholder="e.g. Rahul"
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()}
         />
-        <Button variant="outline">
+        <Button variant="outline" onClick={search} disabled={loading}>
           <Search className="h-4 w-4" />
-          Search
+          {loading ? "Searching…" : "Search"}
         </Button>
       </div>
-      {q && results.length === 0 && (
+      {searched && results.length === 0 && (
         <AccessDenied
           title="No patient found"
-          message="Check the ID or spelling and try again."
+          message="Check the spelling and try again."
         />
       )}
       <div className="grid gap-3">
         {results.map((p) => (
           <div
-            key={p.id}
+            key={p.patientID}
             className="flex items-center justify-between rounded-lg border bg-card p-4 shadow-sm"
           >
             <div>
               <div className="text-sm font-semibold text-foreground">
-                {p.name}
+                {p.fullName}
               </div>
               <div className="text-xs text-muted-foreground">
-                {p.id} · {p.age}y · {p.gender}
+                {p.patientID} · {p.gender} · DOB {p.dob}
               </div>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setSelected(p)}>
-                View records
-              </Button>
-              <Button
-                size="sm"
-                onClick={() =>
-                  toast.success(`Treatment relationship started with ${p.name}`)
-                }
-              >
-                Create relationship
-              </Button>
             </div>
           </div>
         ))}
       </div>
-      {selected && (
-        <div className="mt-6 space-y-3">
-          <SectionHeader title={`Records for ${selected.name}`} />
-          <div className="grid gap-3 md:grid-cols-2">
-            {mockRecords.map((r) => (
-              <DocumentCard
-                key={r.id}
-                record={r}
-                locked={r.sensitivity === "SENSITIVE"}
-                onRequestAccess={() =>
-                  toast.success("Permission request sent to patient")
-                }
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-
 function MyPatients() {
-  const [patients, setPatients] = useState(mockPatients);
-  const [realItems, setRealItemsState] = useState<{ id: string; patientID: string; relationshipType: string; status: string }[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("medvault_relationships") ?? "[]");
-    } catch {
-      return [];
-    }
-  });
-  const setRealItems = (items: typeof realItems) => {
-    setRealItemsState(items);
-    localStorage.setItem("medvault_relationships", JSON.stringify(items));
-  };
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [patientID, setPatientID] = useState("");
   const [relationshipType, setRelationshipType] = useState("ONGOING_TREATMENT");
-  const [loading, setLoading] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
 
   const TYPES = [
     "RECENT_APPOINTMENT",
@@ -321,18 +284,21 @@ function MyPatients() {
     "REFERRED_BY_DOCTOR",
   ];
 
+  const load = () => {
+    treatmentRelationshipApi.list().then((res: any) => {
+      setItems(res.data ?? []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  };
+
+  useEffect(load, []);
+
   const act = async (id: string, action: "discharge" | "dormant" | "reactivate") => {
     try {
       if (action === "discharge") await treatmentRelationshipApi.discharge(id);
       if (action === "dormant") await treatmentRelationshipApi.markDormant(id);
       if (action === "reactivate") await treatmentRelationshipApi.reactivate(id);
-      setRealItems(
-        realItems.map((x) =>
-          x.id === id
-            ? { ...x, status: action === "dormant" ? "Dormant" : action === "reactivate" ? "Active" : "Discharged" }
-            : x,
-        ),
-      );
+      load();
       toast.success(`Relationship ${action === "dormant" ? "marked dormant" : action === "reactivate" ? "reactivated" : "discharged"}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : `Couldn't ${action}`);
@@ -359,20 +325,17 @@ function MyPatients() {
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!patientID) { toast.error("Enter a patient ID"); return; }
-                setLoading(true);
+                setCreateLoading(true);
                 try {
-                  const res: any = await treatmentRelationshipApi.create({ patientID, relationshipType });
-                  setRealItems([
-                    { id: res.relationshipID ?? res.data?.relationshipID, patientID, relationshipType, status: "Active" },
-                    ...realItems,
-                  ]);
+                  await treatmentRelationshipApi.create({ patientID, relationshipType });
+                  load();
                   setOpen(false);
                   setPatientID("");
                   toast.success("Treatment relationship created");
                 } catch (err) {
                   toast.error(err instanceof ApiError ? err.message : "Couldn't create relationship");
                 } finally {
-                  setLoading(false);
+                  setCreateLoading(false);
                 }
               }}
             >
@@ -386,8 +349,8 @@ function MyPatients() {
                 </SelectContent>
               </Select>
               <DialogFooter>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Creating…" : "Create"}
+                <Button type="submit" className="w-full" disabled={createLoading}>
+                  {createLoading ? "Creating…" : "Create"}
                 </Button>
               </DialogFooter>
             </form>
@@ -395,9 +358,11 @@ function MyPatients() {
         </Dialog>
       </div>
 
+      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
       <div className="space-y-3">
-        {realItems.map((p) => (
-          <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
+        {!loading && items.length === 0 && <EmptyState label="No patients yet." />}
+        {items.map((p) => (
+          <div key={p.relationshipID} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm">
             <div>
               <div className="flex items-center gap-2">
                 <div className="text-sm font-semibold text-foreground">{p.patientID}</div>
@@ -406,28 +371,15 @@ function MyPatients() {
               <div className="mt-0.5 text-xs text-muted-foreground">{p.relationshipType.replace(/_/g, " ")}</div>
             </div>
             <div className="flex gap-2">
-              {p.id && p.status === "Active" && (
+              {p.status === "ACTIVE" && (
                 <>
-                  <Button size="sm" variant="ghost" onClick={() => act(p.id, "dormant")}>Mark dormant</Button>
-                  <Button size="sm" variant="ghost" onClick={() => act(p.id, "discharge")}>Discharge</Button>
+                  <Button size="sm" variant="ghost" onClick={() => act(p.relationshipID, "dormant")}>Mark dormant</Button>
+                  <Button size="sm" variant="ghost" onClick={() => act(p.relationshipID, "discharge")}>Discharge</Button>
                 </>
               )}
-              {p.status === "Dormant" && (
-                <Button size="sm" onClick={() => act(p.id, "reactivate")}>Reactivate</Button>
+              {p.status === "DORMANT" && (
+                <Button size="sm" onClick={() => act(p.relationshipID, "reactivate")}>Reactivate</Button>
               )}
-            </div>
-          </div>
-        ))}
-        {patients.map((p) => (
-          <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm opacity-60">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="text-sm font-semibold text-foreground">{p.name}</div>
-                <StatusPill status={p.status} />
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {p.id} · {p.age}y · {p.gender} · {p.relationshipType} (demo data)
-              </div>
             </div>
           </div>
         ))}
@@ -466,9 +418,23 @@ function Consultations({ doctorID }: { doctorID: string }) {
         )}
         {created.map((r) => (
           <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="text-sm font-semibold">{r.id}</div>
-            <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
-            <div className="mt-2 text-sm">{r.diagnosis}</div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{r.id}</div>
+                <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
+                <div className="mt-2 text-sm">{r.diagnosis}</div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => consultationApi.document(r.id).catch((err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -506,8 +472,22 @@ function Prescriptions({ doctorID }: { doctorID: string }) {
         )}
         {created.map((r) => (
           <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="text-sm font-semibold">{r.id}</div>
-            <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">{r.id}</div>
+                <div className="text-xs text-muted-foreground">Patient: {r.patientID} · {r.recordType}</div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => prescriptionApi.document(r.id, "hospital").catch((err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
           </div>
         ))}
       </div>
@@ -515,25 +495,70 @@ function Prescriptions({ doctorID }: { doctorID: string }) {
   );
 }
 function LabReports() {
+  const [patientID, setPatientID] = useState("");
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const search = () => {
+    if (!patientID) return;
+    setLoading(true);
+    labReportApi.list(patientID).then((res: any) => {
+      setItems(res.data ?? []);
+      setSearched(true);
+    }).catch((err) => {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't load lab reports");
+      setItems([]);
+      setSearched(true);
+    }).finally(() => setLoading(false));
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader
         title="Lab reports"
-        subtitle="Read-only view of lab reports for patients you treat."
+        subtitle="Read-only view of lab reports for a patient you treat."
       />
+      <div className="flex gap-2">
+        <Input
+          placeholder="Patient ID (e.g. PAT0049)"
+          value={patientID}
+          onChange={(e) => setPatientID(e.target.value)}
+        />
+        <Button variant="outline" onClick={search} disabled={loading}>
+          <Search className="h-4 w-4" />
+          {loading ? "Searching…" : "Search"}
+        </Button>
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
-        {mockRecords
-          .filter((r) => r.type === "LAB_REPORT")
-          .map((r) => (
-            <DocumentCard
-              key={r.id}
-              record={r}
-              locked={r.sensitivity === "SENSITIVE"}
-              onRequestAccess={() =>
-                toast.success("Permission request sent to patient")
-              }
-            />
-          ))}
+        {searched && items.length === 0 && (
+          <EmptyState label="No lab reports found for this patient (or you may not have an active treatment relationship with them)." />
+        )}
+        {items.map((r) => (
+          <div key={r.reportID} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold">{r.reportType}</div>
+                  {r.sensitivityLevel === "SENSITIVE" && <SensitivityBadge />}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(r.createdAt).toLocaleDateString()}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => labReportApi.document(r.reportID, "hospital").catch((err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -544,20 +569,31 @@ function Referrals({ doctorID }: { doctorID: string }) {
   const [toDoctorID, setToDoctorID] = useState("");
   const [patientID, setPatientID] = useState("");
   const [reason, setReason] = useState("");
+  const [referralType, setReferralType] = useState("GENERAL");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [referralType, setReferralType] = useState("GENERAL");
-  const [items, setItemsState] = useState<{ id: string; patientID: string; toDoctorID: string; reason: string }[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("medvault_referrals") ?? "[]");
-    } catch {
-      return [];
-    }
-  });
-  const setItems = (i: typeof items) => {
-    setItemsState(i);
-    localStorage.setItem("medvault_referrals", JSON.stringify(i));
+  const [sent, setSent] = useState<{ id: string; patientID: string; toDoctorID: string; reason: string }[]>([]);
+  const [received, setReceived] = useState<{ id: string; patientID: string; fromDoctorID: string; reason: string }[]>([]);
+
+  const loadSent = () => {
+    referralApi.list("from").then((res: any) => {
+      setSent((res.data ?? []).map((r: any) => ({
+        id: r.referralID, patientID: r.patientID, toDoctorID: r.toDoctorID, reason: r.referralReason,
+      })));
+    }).catch(() => {});
   };
+  const loadReceived = () => {
+    referralApi.list("to").then((res: any) => {
+      setReceived((res.data ?? []).map((r: any) => ({
+        id: r.referralID, patientID: r.patientID, fromDoctorID: r.fromDoctorID, reason: r.referralReason,
+      })));
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    loadSent();
+    loadReceived();
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -587,11 +623,11 @@ function Referrals({ doctorID }: { doctorID: string }) {
                 }
                 setLoading(true);
                 try {
-                  const res: any = await referralApi.create(
+                  await referralApi.create(
                     { patientID, fromDoctorID: doctorID, toDoctorID, referralReason: reason, referralType },
                     file,
                   );
-                  setItems([{ id: res.referralID, patientID, toDoctorID, reason }, ...items]);
+                  loadSent();
                   setOpen(false);
                   setToDoctorID("");
                   setPatientID("");
@@ -654,20 +690,68 @@ function Referrals({ doctorID }: { doctorID: string }) {
           </DialogContent>
         </Dialog>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        {items.length === 0 && <EmptyState label="No referrals sent yet." />}
-        {items.map((r) => (
-          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="text-sm font-semibold">To: {r.toDoctorID}</div>
-            <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
-            <div className="mt-2 text-sm">{r.reason}</div>
+
+      <Tabs defaultValue="sent">
+        <TabsList>
+          <TabsTrigger value="sent">Sent ({sent.length})</TabsTrigger>
+          <TabsTrigger value="received">Received ({received.length})</TabsTrigger>
+        </TabsList>
+        <TabsContent value="sent" className="mt-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            {sent.length === 0 && <EmptyState label="No referrals sent yet." />}
+            {sent.map((r) => (
+              <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">To: {r.toDoctorID}</div>
+                    <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+                    <div className="mt-2 text-sm">{r.reason}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => referralApi.document(r.id).catch((err) =>
+                      toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                    )}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </TabsContent>
+        <TabsContent value="received" className="mt-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            {received.length === 0 && <EmptyState label="No referrals received yet." />}
+            {received.map((r) => (
+              <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">From: {r.fromDoctorID}</div>
+                    <div className="text-xs text-muted-foreground">Patient: {r.patientID}</div>
+                    <div className="mt-2 text-sm">{r.reason}</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => referralApi.document(r.id).catch((err) =>
+                      toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                    )}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
-
 function PermissionsSent() {
   const [items, setItems] = useState<{ id: string; patient: string; resource: string; status: string }[]>([
     { id: "PRS-1", patient: "Ananya Nair", resource: "Psychiatry consultation", status: "PENDING" },
@@ -731,6 +815,52 @@ function PermissionsSent() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+function DoctorAuditView() {
+  const [lookupID, setLookupID] = useState("");
+  const [entries, setEntries] = useState(mockAudit.filter((a) => a.actorRole === "Doctor"));
+
+  const lookup = async () => {
+    if (!lookupID) return;
+    try {
+      const res: any = await auditApi.history(lookupID);
+      const d = res.data;
+      setEntries([
+        {
+          id: d.auditID,
+          actor: d.actorID,
+          actorRole: d.actorRole,
+          actorOrg: d.actorOrg || "—",
+          action: d.action,
+          resourceType: d.resourceType,
+          resourceId: d.resourceID,
+          timestamp: d.timestamp,
+        },
+        ...entries,
+      ]);
+      toast.success("Audit entry loaded");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't load that audit entry");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        title="Audit history"
+        subtitle="Records you have accessed."
+      />
+      <div className="flex gap-2">
+        <Input
+          placeholder="Look up entry by audit ID (e.g. AUD0012)"
+          value={lookupID}
+          onChange={(e) => setLookupID(e.target.value)}
+        />
+        <Button onClick={lookup}>Load</Button>
+      </div>
+      <AuditTimeline entries={entries} />
     </div>
   );
 }

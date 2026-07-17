@@ -76,5 +76,16 @@ router.put("/:id", authenticate, upload.single("file"), async (req, res) => {
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
+/**
+ * GET /consultations?patientID=...
+ */
+router.get("/", authenticate, async (req, res) => {
+    const { patientID } = req.query;
+    if (!patientID) {
+        return res.status(400).json({ status: "FAILED", message: "patientID query param is required." });
+    }
+    const result = await svc.getConsultationsByPatient(patientID, req.user.id, req.user.role);
+    return res.status(result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500).json(result);
+});
 
 export default router;

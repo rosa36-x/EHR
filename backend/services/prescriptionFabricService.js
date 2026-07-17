@@ -126,7 +126,41 @@ export async function getPrescription(prescriptionID, actorID, actorRole, orgNam
         if (client)  client.close();
     }
 }
+export async function getPrescriptionsByPatient(patientID, actorID, actorRole) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
 
+        const raw = await contract.evaluateTransaction("GetPrescriptionsByPatient", patientID);
+        const all = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+
+        if (actorRole === "patient") {
+            if (actorID !== patientID) {
+                return { status: "ACCESS_DENIED", message: "Patients can only view their own records." };
+            }
+            return { status: "SUCCESS", data: all };
+        }
+
+        const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
+        const visible = [];
+        for (const p of all) {
+            if (p.sensitivityLevel === "SENSITIVE") {
+                if (await hasActivePermission(actorID, p.prescriptionID)) visible.push(p);
+            } else if (hasRelationship) {
+                visible.push(p);
+            }
+        }
+        return { status: "SUCCESS", data: visible };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 export async function getPrescriptionDocument(prescriptionID, actorID, actorRole, orgName = "hospital") {
     let gateway, client;
     try {

@@ -67,5 +67,15 @@ router.patch("/:id/reactivate", authenticate, authorizeRoles("doctor"), async (r
     const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
     return res.status(statusCode).json(result);
 });
-
+router.get("/", authenticate, async (req, res) => {
+    let result;
+    if (req.user.role === "doctor") {
+        result = await svc.getTreatmentRelationshipsByDoctor(req.user.id);
+    } else if (req.user.role === "patient") {
+        result = await svc.getTreatmentRelationshipsByPatient(req.user.id);
+    } else {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Only doctors and patients can list treatment relationships." });
+    }
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
 export default router;

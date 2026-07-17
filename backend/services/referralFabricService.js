@@ -119,6 +119,24 @@ export async function getReferral(referralID, actorID, actorRole) {
         if (client)  client.close();
     }
 }
+export async function getReferralsByDoctor(doctorID, direction) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+
+        const raw = await contract.evaluateTransaction("GetReferralsByDoctor", doctorID, direction ?? "");
+        const data = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+        return { status: "SUCCESS", data };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 
 export async function getReferralDocument(referralID, actorID, actorRole) {
     let gateway, client;

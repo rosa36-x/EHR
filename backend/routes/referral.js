@@ -58,5 +58,15 @@ router.get("/:id/document", authenticate, async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${req.params.id}.pdf"`);
     return res.send(result.document);
 });
-
+/**
+ * GET /referrals?direction=from|to
+ * Doctor-only — lists referrals this doctor sent or received.
+ */
+router.get("/", authenticate, async (req, res) => {
+    if (req.user.role !== "doctor") {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Only doctors can list referrals." });
+    }
+    const result = await svc.getReferralsByDoctor(req.user.id, req.query.direction);
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
 export default router;

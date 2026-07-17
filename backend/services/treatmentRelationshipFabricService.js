@@ -111,7 +111,39 @@ export async function getTreatmentRelationship(relationshipID, actorID, actorRol
         if (client)  client.close();
     }
 }
+export async function getTreatmentRelationshipsByDoctor(doctorID) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+        const raw = await contract.evaluateTransaction("GetTreatmentRelationshipsByDoctor", doctorID);
+        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 
+export async function getTreatmentRelationshipsByPatient(patientID) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+        const raw = await contract.evaluateTransaction("GetTreatmentRelationshipsByPatient", patientID);
+        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 /**
  * Check if an ACTIVE treatment relationship exists between
  * a doctor and patient. Used as access gate for normal records.

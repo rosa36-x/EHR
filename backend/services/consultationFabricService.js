@@ -7,6 +7,8 @@ import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js"
 import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
+import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
+import { hasActivePermission } from "./permissionRequestFabricService.js";
 
 export async function createConsultation(data, fileBuffer, actorID) {
     let gateway, client;
@@ -166,7 +168,44 @@ export async function getConsultationDocument(consultationID, actorID, actorRole
         if (client)  client.close();
     }
 }
+export async function getConsultationsByPatient(patientID, actorID, actorRole) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
 
+        const raw = await contract.evaluateTransaction("GetConsultationsByPatient", patientID);
+        const all = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+
+        if (actorRole === "patient") {
+            if (actorID !== patientID) {
+                return { status: "ACCESS_DENIED", message: "Patients can only view their own records." };
+            }
+            return { status: "SUCCESS", data: all };
+        }
+
+        // Doctors: silently filter to what they're actually allowed to open —
+        // mirrors canAccessRecord's rules, but without logging a denial for
+        // every item that merely appeared in a list scan.
+        const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
+        const visible = [];
+        for (const c of all) {
+            if (c.sensitivityLevel === "SENSITIVE") {
+                if (await hasActivePermission(actorID, c.consultationID)) visible.push(c);
+            } else if (hasRelationship) {
+                visible.push(c);
+            }
+        }
+        return { status: "SUCCESS", data: visible };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 export async function updateConsultation(data, fileBuffer, actorID) {
     let gateway, client;
     try {

@@ -11,6 +11,7 @@ import {
   User,
   UserRound,
   XCircle,
+  Download,
 } from "lucide-react";
 import { DashboardShell, type NavItem } from "@/components/shared/dashboard-shell";
 import { DocumentCard } from "@/components/shared/document-card";
@@ -48,7 +49,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { getSession } from "@/lib/session";
-import { patientApi, consentApi, permissionRequestApi, ApiError, type PatientRecord } from "@/lib/api";
+import { patientApi, consentApi, permissionRequestApi, ApiError, type PatientRecord,auditApi,consultationApi, prescriptionApi, labReportApi,treatmentRelationshipApi } from "@/lib/api";
 import {
   mockAudit,
   mockConsents,
@@ -140,7 +141,7 @@ function PatientDashboard() {
         />
       )}
       {tab === "profile" && <Profile session={session} profile={profile} />}
-      {tab === "records" && <Records />}
+      {tab === "records" && <Records patientID={session.id!} />}
       {tab === "permissions" && (
         <Permissions items={permissions} setItems={setPermissions} />
       )}
@@ -275,37 +276,88 @@ function Profile({
   );
 }
 
-function Records() {
-  const [filter, setFilter] = useState<"ALL" | RecordType>("ALL");
-  const items = useMemo(
-    () => (filter === "ALL" ? mockRecords : mockRecords.filter((r) => r.type === filter)),
-    [filter],
-  );
-  const tabs: { id: "ALL" | RecordType; label: string }[] = [
+function Records({ patientID }: { patientID: string }) {
+  const [filter, setFilter] = useState<"ALL" | "CONSULTATION" | "PRESCRIPTION" | "LAB_REPORT">("ALL");
+  const [consultations, setConsultations] = useState<any[]>([]);
+  const [prescriptions, setPrescriptions] = useState<any[]>([]);
+  const [labReports, setLabReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.allSettled([
+      consultationApi.list(patientID),
+      prescriptionApi.list(patientID),
+      labReportApi.list(patientID),
+    ]).then(([c, p, l]) => {
+      if (c.status === "fulfilled") setConsultations((c.value as any).data ?? []);
+      if (p.status === "fulfilled") setPrescriptions((p.value as any).data ?? []);
+      if (l.status === "fulfilled") setLabReports((l.value as any).data ?? []);
+      setLoading(false);
+    });
+  }, [patientID]);
+
+  const tabs = [
     { id: "ALL", label: "All" },
     { id: "CONSULTATION", label: "Consultations" },
     { id: "PRESCRIPTION", label: "Prescriptions" },
     { id: "LAB_REPORT", label: "Lab reports" },
-    { id: "REFERRAL", label: "Referrals" },
-  ];
+  ] as const;
+
+  const rows: { id: string; kind: string; title: string; sensitive: boolean; date: string; download: () => Promise<void> }[] = [
+    ...consultations.map((c) => ({
+      id: c.consultationID, kind: "CONSULTATION", title: c.recordType, sensitive: c.sensitivityLevel === "SENSITIVE",
+      date: c.createdAt, download: () => consultationApi.document(c.consultationID),
+    })),
+    ...prescriptions.map((p) => ({
+      id: p.prescriptionID, kind: "PRESCRIPTION", title: p.recordType, sensitive: p.sensitivityLevel === "SENSITIVE",
+      date: p.createdAt, download: () => prescriptionApi.document(p.prescriptionID),
+    })),
+    ...labReports.map((l) => ({
+      id: l.reportID, kind: "LAB_REPORT", title: l.reportType, sensitive: l.sensitivityLevel === "SENSITIVE",
+      date: l.createdAt, download: () => labReportApi.document(l.reportID),
+    })),
+  ].filter((r) => filter === "ALL" || r.kind === filter);
+
   return (
     <div className="space-y-4">
       <SectionHeader
         title="My records"
         subtitle="All documents created about you across the network."
       />
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as "ALL" | RecordType)}>
+      <Tabs value={filter} onValueChange={(v) => setFilter(v as typeof filter)}>
         <TabsList>
           {tabs.map((t) => (
-            <TabsTrigger key={t.id} value={t.id}>
-              {t.label}
-            </TabsTrigger>
+            <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
+      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
       <div className="grid gap-3 md:grid-cols-2">
-        {items.map((r) => (
-          <DocumentCard key={r.id} record={r} />
+        {!loading && rows.length === 0 && <EmptyState label="No records found." />}
+        {rows.map((r) => (
+          <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold">{r.title}</div>
+                  {r.sensitive && <SensitivityBadge />}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {r.kind.replace("_", " ")} · {new Date(r.date).toLocaleDateString()}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => r.download().catch((err) =>
+                  toast.error(err instanceof ApiError ? err.message : "Couldn't download document")
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
+          </div>
         ))}
       </div>
     </div>
@@ -633,31 +685,41 @@ function Consents({
 }
 
 function Relationships() {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    treatmentRelationshipApi.list().then((res: any) => {
+      setItems(res.data ?? []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
   return (
     <div className="space-y-4">
       <SectionHeader
         title="Care team"
         subtitle="Clinicians currently authorized in a treatment relationship with you."
       />
+      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
       <div className="space-y-3">
-        {mockRelationships.map((r) => (
+        {!loading && items.length === 0 && <EmptyState label="No care team members yet." />}
+        {items.map((r) => (
           <div
-            key={r.id}
+            key={r.relationshipID}
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm"
           >
             <div>
               <div className="flex items-center gap-2">
                 <div className="text-sm font-semibold text-foreground">
-                  {r.doctorName}
+                  {r.doctorID}
                 </div>
                 <StatusPill status={r.status} />
               </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                {r.specialization} · {r.hospital}
-              </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {r.relationshipType} since {r.since}
+                {r.relationshipType.replace(/_/g, " ")} · since {new Date(r.createdAt).toLocaleDateString()}
               </div>
+              {r.notes && <div className="mt-1 text-xs text-muted-foreground">{r.notes}</div>}
             </div>
           </div>
         ))}
@@ -667,13 +729,48 @@ function Relationships() {
 }
 
 function AuditView() {
+  const [lookupID, setLookupID] = useState("");
+  const [entries, setEntries] = useState(mockAudit);
+
+  const lookup = async () => {
+    if (!lookupID) return;
+    try {
+      const res: any = await auditApi.history(lookupID);
+      const d = res.data;
+      setEntries([
+        {
+          id: d.auditID,
+          actor: d.actorID,
+          actorRole: d.actorRole,
+          actorOrg: d.actorOrg || "—",
+          action: d.action,
+          resourceType: d.resourceType,
+          resourceId: d.resourceID,
+          timestamp: d.timestamp,
+        },
+        ...entries,
+      ]);
+      toast.success("Audit entry loaded");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Couldn't load that audit entry");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <SectionHeader
         title="Audit history"
         subtitle="Every access to your records — by you, and by clinicians and partner orgs."
       />
-      <AuditTimeline entries={mockAudit} />
+      <div className="flex gap-2">
+        <Input
+          placeholder="Look up entry by audit ID (e.g. AUD0012)"
+          value={lookupID}
+          onChange={(e) => setLookupID(e.target.value)}
+        />
+        <Button onClick={lookup}>Load</Button>
+      </div>
+      <AuditTimeline entries={entries} />
     </div>
   );
 }
