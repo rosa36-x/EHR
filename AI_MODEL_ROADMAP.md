@@ -1,97 +1,110 @@
 # AI Anomaly Detection — Roadmap
 
 Governed AI actor that reads the existing on-chain audit trail, flags
-anomalous access patterns, and writes its own flags back through an audited,
-on-chain identity. No chaincode changes, no redeploy — reuses functions
-already shipped for the EHR/consent work.
+anomalous access patterns, and writes its own flags back through an
+audited, on-chain identity (`actorRole: "ai_engine"`, via the existing
+`logAudit()` — no new chaincode surface). A governance actor reviews
+flags and acts via **existing** chaincode functions (`RevokeConsent`,
+marking a treatment relationship dormant, etc.) — the AI recommends, a
+human triggers the actual enforcement call.
 
-## Why this design
+## Current AI Model Architecture (as deployed)
 
-`CreateAuditLog` already accepts arbitrary strings for `actorID`, `actorRole`,
-`action`, `resourceType`, `resourceID`, and the on-chain policy check only
-verifies the caller's MSP (`GovernanceMSP`), never the `actorRole` value. So
-the AI engine can log itself as a real actor (`actorRole: "ai_engine"`)
-through the exact same `logAudit()` every other route already calls — zero
-new chaincode surface.
+Three stages, in order: **5-model PyOD ensemble** → **LSTM sequence
+model** → **two-tier priority tagging**. Trained via a separate weekly
+batch job, scored live every worker cycle with no refitting. Full
+rationale/benchmarking trail is in `AI_MODEL_EVALUATION_NOTES.md`; this
+section is the architecture summary.
 
-The SHAP explanation payload (score, top contributing features, human-
-readable reason) doesn't fit `AuditLog`'s fixed struct, so that detail lives
-in Mongo, cross-referenced by the `auditID` returned from the on-chain call.
-This keeps the flag itself tamper-evident while keeping the rich, variable-
-shaped explainability data out of the ledger.
+### Stage 1 — 5-model PyOD ensemble (`pyod_ensemble.py`)
 
-## Steps
+Runs on per-actor-day AGGREGATE features (`feature_engineering.py`):
+`access_frequency`, `distinct_resources_touched`, `off_hours_ratio`,
+`burst_count`, `consent_denied_ratio`, `dispense_without_read_count`.
+Selected from an 8-algorithm PyCaret/PyOD benchmark; these 5 were kept
+for spanning distinct algorithmic families (not 5 variations on one
+idea), which is what makes majority/ensemble agreement meaningful rather
+than redundant:
 
-1. **Feature pipeline** — pull recent `AuditLog` entries via existing
-   audit-history queries. Compute per-actor / per-patient features: access
-   frequency, off-hours ratio, cross-org access bursts, consent-denied
-   ratio, dispense-without-prior-read patterns.
-
-2. **Python model service** — small REST API, separate from `backend/`:
-   - Isolation Forest — per-event/window anomaly score (unsupervised, no
-     labels needed to start)
-   - LSTM (optional) — per-actor access *sequences* over time, catches
-     ordering/timing anomalies a single-event score misses
-   - SHAP — feature attribution on top of the Isolation Forest score (the
-     "why" behind a flag)
-
-3. **`AnomalyFlag` Mongo schema** — `score`, `topFeatures` (SHAP output),
-   `status` (`PENDING` / `REVIEWED` / `DISMISSED`), `auditID` (links to the
-   on-chain `CreateAuditLog` entry for that flag). Same pattern as the
-   existing `OrgActor` schema in `db.js`.
-
-4. **`anomalyWorker.js`** — standalone Node entrypoint (not inside
-   `server.js`). Imports `fabricService.js`, `db.js`, `auditMiddleware.js`
-   as-is. Runs on a schedule (`node-cron` or a loop):
-   pull audit data → call Python service → write `AnomalyFlag` in Mongo →
-   call `logAudit()` as `actorRole: "ai_engine"`, `action:
-   "ANOMALY_FLAGGED"` (real chaincode call, existing function, existing
-   `governance` identity).
-
-5. **Review routes** — `routes/anomaly.js`, governance-only, mirrors the
-   shape of `auditHistory.js`. List/review flags, cross-reference the
-   linked on-chain `auditID` as proof the flag was actually raised (not
-   fabricated after the fact).
-
-6. **Enforcement** — a governance actor reviews a flag and acts on it via
-   **existing** chaincode functions (`RevokeConsent`, marking a treatment
-   relationship dormant, etc.). No new chaincode function for enforcement
-   either — the AI recommends, a human triggers a call that already exists.
-
-7. **Run** — start the worker independently: `node anomalyWorker.js` (or a
-   pm2/systemd entry for a real deployment). Separate process from
-   `server.js` by design — see tradeoff note below.
-
-## What's genuinely new vs. reused
-
-| New | Reused as-is |
+| Model | What it actually does |
 |---|---|
-| Python model service (Isolation Forest / LSTM / SHAP) | `logAudit()` / `auditMiddleware.js` |
-| `AnomalyFlag` Mongo schema | `fabricService.js` (`getContract("governance")`) |
-| `anomalyWorker.js` entrypoint + scheduler | All existing routes/services — untouched |
-| `routes/anomaly.js` | Existing chaincode functions used for enforcement |
+| **PCA** | Reconstructs each row from its principal components; flags rows with high reconstruction error — i.e. rows that don't fit the dominant patterns of "normal" correlated behavior. |
+| **KNN** | Distance to the k-th nearest neighbor in feature space; flags rows sitting far from any cluster of normal actor-days. |
+| **IForest** (Isolation Forest) | Randomly partitions the feature space; anomalies isolate in fewer random splits than normal points, since they're rarer/more separable. |
+| **OCSVM** (One-Class SVM) | Learns a boundary enclosing "normal" data in feature space; flags anything outside it. |
+| **HBOS** | Univariate histograms per feature, combined; fast, catches per-feature extremes even when the multivariate structure looks unremarkable. |
 
-## Framing note for the paper
+Each model's `decision_function` output is min-max normalized, then
+**equal-weighted averaged** into one continuous `anomaly_score` — the
+actual signal used downstream. A `votes` column (how many of the 5
+independently flag a row) is also computed but is reporting-only, not
+decisive (checked directly: percentile-on-score beat vote-count as the
+actual threshold rule).
 
-"Governed Fabric MSP entity with its own audit trail" is accurate at the
-audit-log level — the AI has a real, on-chain, tamper-evident identity for
-every flag it raises. Running it as a separate process (`anomalyWorker.js`)
-rather than in-process with the Express app makes the "independent entity"
-framing closer to literal, not just log-level — worth stating precisely
-rather than overclaiming architectural isolation beyond what actually
-exists (it's still a Node process using the same Fabric gateway identity
-pattern as the rest of the backend, not its own MSP/peer).
+**Known structural limit:** all 5 operate on daily aggregates with no
+concept of event order — confirmed empirically to unanimously miss 100%
+of sequence/order-type anomalies. This is why Stage 2 exists.
 
-## Blocking dependency
+### Stage 2 — LSTM sequence model (`lstm_sequence_model.py`)
 
-Training/eval data. Real usage volume is almost certainly insufficient —
-needs a synthetic data generator: simulate normal access patterns, inject
-labeled anomalies (rapid cross-org bursts, midnight access spikes, one
-actor touching many patients in a short window) to get a usable
-training/eval set before the Isolation Forest / LSTM work can be evaluated
-meaningfully.
+Per-actor next-event-prediction model (unsupervised, no labels used in
+training). Each event becomes a token of `(actorRole, action,
+resourceType, time-since-last-event-bucket)`; an LSTM is trained to
+predict the next token given an actor's history so far. Anomaly signal =
+**surprisal** (`-log P(actual next token | history)`) — a predictable
+actor produces low-surprisal sequences, an actor doing something
+never-before-seen (wrong order, unusual gap, unusual action) produces
+high surprisal. This is what catches the sequence/order anomalies Stage
+1 structurally can't see (e.g. `bigram_violation`, `order_composition`).
+
+Live scoring pulls an extra rolling lookback window (14 days, configurable
+via `ANOMALY_LSTM_LOOKBACK_DAYS`) purely as autoregressive context —
+scored for correct history, but only the actual new scan window is
+reported (`--report-since`). Mitigates, doesn't eliminate, the
+cold-start-every-run issue (see "LSTM Persistent State" below).
+
+### Stage 3 — Two-tier priority tagging (`priority_tagging.py`)
+
+Combines Stage 1 + Stage 2 via **independent thresholds, not a weighted
+blend** — a linear blend was tested and found to suppress LSTM's signal
+specifically on the sequence-type cases it exists for (checked directly:
+LSTM alone recovered far more sequence anomalies at the same percentile
+bar than any blended weighting did).
+
+- **P1 (`P1_high_confidence`):** ensemble `anomaly_score` ≥ its own p97
+  threshold (from training data, not recomputed live).
+- **P2 (`P2_sequence_candidate`):** LSTM `max_z_surprisal` ≥ its own p99
+  threshold, excluding anything already in P1 (dedup, P1 wins).
+
+P1 and P2 are intentionally NOT uniform-precision — P1 is the
+higher-confidence tier (~0.5 precision), P2 is a deliberately
+lower-confidence "worth a quick check" tier (~0.3 precision) that exists
+specifically to surface the sequence-type cases P1 can never catch.
+Surface these as separate queues to reviewers, not one undifferentiated
+flagged list.
+
+### Train / score split + scheduling
+
+- `--mode train`: fits fresh on a large historical window, saves
+  scaler/models/vocab/thresholds to `anomalyDetection/models/`.
+- `--mode score`: loads those saved artifacts, scores new data, **no
+  refitting**. This is all the live worker (`anomalyWorker.js`) ever
+  calls — it will refuse to run if artifacts are missing.
+- **Retraining is a separate weekly batch job**, not something the
+  always-on worker does: `retrain_pipeline.sh`, scheduled via crontab
+  for **every Sunday at 3:00 AM**:
+  ```
+  0 3 * * 0 /home/rosa/hyperledger/ehr-fabric-network/retrain_cron_wrapper.sh >> /home/rosa/retrain.log 2>&1
+  ```
+  The wrapper activates the venv and sets `MONGO_URI` (cron runs without
+  an interactive shell, so these aren't inherited automatically), then
+  calls `retrain_pipeline.sh`, which exports historical
+  `AuditLogMirror` data, retrains both models, and writes
+  `models/thresholds.json` for the live worker to pick up on its next
+  cycle (no restart needed).
 
 ## Current Status
+
 
 **Implemented:**
 - `point` and `emergency_abuse` classification on `AnomalyFlag` (see
