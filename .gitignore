@@ -164,6 +164,7 @@ __pycache__/
 
 # Shell scripts used for experiments
 *.sh
+!retrain_pipeline.sh
 
 # Experiment output folders
 repeated_runs_*/
