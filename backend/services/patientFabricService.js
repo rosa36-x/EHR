@@ -123,3 +123,20 @@ export async function getPatient(patientID, actorID, actorRole) {
         if (client)  client.close();
     }
 }
+export async function searchPatientsByName(nameSubstring) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+        const raw = await contract.evaluateTransaction("SearchPatientsByName", nameSubstring);
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}

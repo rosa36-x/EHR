@@ -59,5 +59,15 @@ router.patch("/:id/reject", authenticate, authorizeRoles("patient"), async (req,
     const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
     return res.status(statusCode).json(result);
 });
-
+router.get("/", authenticate, async (req, res) => {
+    let result;
+    if (req.user.role === "patient") {
+        result = await svc.getPermissionRequestsByPatient(req.user.id);
+    } else if (req.user.role === "doctor") {
+        result = await svc.getPermissionRequestsByDoctor(req.user.id);
+    } else {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Only patients and doctors can list permission requests." });
+    }
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
 export default router;

@@ -79,5 +79,21 @@ router.patch("/:id/status", authenticate, enforceOrgMatchesRole, async (req, res
     const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
     return res.status(statusCode).json(result);
 });
+/**
+ * GET /prescriptions?patientID=...
+ * Hospital-only (matches the chaincode-level restriction) — Pharmacy must
+ * look up a specific prescription by ID, which goes through consent.
+ */
+router.get("/", authenticate, async (req, res) => {
+    if (req.user.role === "org_actor") {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Pharmacy must look up a specific prescription by ID." });
+    }
+    const { patientID } = req.query;
+    if (!patientID) {
+        return res.status(400).json({ status: "FAILED", message: "patientID query param is required." });
+    }
+    const result = await svc.getPrescriptionsByPatient(patientID, req.user.id, req.user.role);
+    return res.status(result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500).json(result);
+});
 
 export default router;

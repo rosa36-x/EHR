@@ -7,7 +7,8 @@ import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js"
 import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth } from "./db.js";
-
+import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
+import { hasActivePermission } from "./permissionRequestFabricService.js";
 export async function createLabReport(data, fileBuffer, actorID) {
     let gateway, client;
     try {
@@ -119,7 +120,42 @@ export async function getLabReport(reportID, actorID, actorRole, orgName = "labo
         if (client)  client.close();
     }
 }
+export async function getLabReportsByPatient(patientID, actorID, actorRole) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
 
+        const raw = await contract.evaluateTransaction("GetLabReportsByPatient", patientID);
+        const text = Buffer.from(raw).toString("utf8");
+        const all = text ? JSON.parse(text) : [];
+
+        if (actorRole === "patient") {
+            if (actorID !== patientID) {
+                return { status: "ACCESS_DENIED", message: "Patients can only view their own records." };
+            }
+            return { status: "SUCCESS", data: all };
+        }
+
+        const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
+        const visible = [];
+        for (const l of all) {
+            if (l.sensitivityLevel === "SENSITIVE") {
+                if (await hasActivePermission(actorID, l.reportID)) visible.push(l);
+            } else if (hasRelationship) {
+                visible.push(l);
+            }
+        }
+        return { status: "SUCCESS", data: visible };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
 export async function getLabReportDocument(reportID, actorID, actorRole, orgName = "laboratory") {
     let gateway, client;
     try {

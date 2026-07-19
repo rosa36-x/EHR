@@ -79,5 +79,16 @@ router.put("/:id", authenticate, upload.single("file"), async (req, res) => {
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
+router.get("/", authenticate, async (req, res) => {
+    if (req.user.role === "org_actor") {
+        return res.status(403).json({ status: "ACCESS_DENIED", message: "Laboratory must look up a specific report by ID." });
+    }
+    const { patientID } = req.query;
+    if (!patientID) {
+        return res.status(400).json({ status: "FAILED", message: "patientID query param is required." });
+    }
+    const result = await svc.getLabReportsByPatient(patientID, req.user.id, req.user.role);
+    return res.status(result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500).json(result);
+});
 
 export default router;

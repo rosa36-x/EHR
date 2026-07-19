@@ -54,3 +54,20 @@ export async function getAuditLog(auditID) {
         if (client)  client.close();
     }
 }
+export async function getAuditLogsByActor(actorID) {
+    let gateway, client;
+    try {
+        const result = await getContract("governance");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+        const raw = await contract.evaluateTransaction("GetAuditLogsByActor", actorID);
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}

@@ -148,6 +148,9 @@ modified_config.json
 
 registerEnroll.sh
 caliper-benchmarks/run.log
+medvault-frontend/node_modules
+medvault-frontend/.env
+medvault-frontend/.output
 # Python cache
 __pycache__/
 *.py[cod]
