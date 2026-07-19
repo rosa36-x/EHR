@@ -318,6 +318,7 @@ function NewFlow() {
                 phone,
                 email,
               });
+	      setAuthToken(res.token);
               setSession({
                 role: "patient",
                 name: res.patient.fullName,
