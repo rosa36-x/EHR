@@ -193,3 +193,10 @@ backend/services/db.js.bak.20260716_152058
 backend/services/db.js.bak.20260716_152320
 docs/AI_MODEL_EVALUATION_NOTES.md.bak.20260716_145831
 anomalyDetection/models/
+
+medvault-frontend/src/lib/api.ts:Zone.Identifier
+medvault-frontend/src/lib/auth-token.ts:Zone.Identifier
+medvault-frontend/src/lib/session.ts:Zone.Identifier
+medvault-frontend/src/routes/auth.doctor.tsx:Zone.Identifier
+medvault-frontend/src/routes/auth.org-actor.tsx:Zone.Identifier
+medvault-frontend/src/routes/auth.patient.tsx:Zone.Identifier
