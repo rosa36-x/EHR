@@ -12,6 +12,8 @@ type Status =
   | "DISCHARGED"
   | "ISSUED"
   | "CANCELLED"
+  | "CONFIRMED"
+  | "DISMISSED"
   | string;
 
 const styles: Record<string, string> = {
@@ -26,6 +28,8 @@ const styles: Record<string, string> = {
   EXPIRED: "bg-muted text-muted-foreground border-border",
   DISCHARGED: "bg-muted text-muted-foreground border-border",
   CANCELLED: "bg-muted text-muted-foreground border-border",
+  CONFIRMED: "bg-destructive/15 text-destructive border-destructive/30",
+  DISMISSED: "bg-muted text-muted-foreground border-border",
 };
 
 export function StatusPill({

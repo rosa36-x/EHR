@@ -129,7 +129,8 @@ export async function getLabReportsByPatient(patientID, actorID, actorRole) {
         const { contract } = result;
 
         const raw = await contract.evaluateTransaction("GetLabReportsByPatient", patientID);
-        const all = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+        const text = Buffer.from(raw).toString("utf8");
+        const all = text ? JSON.parse(text) : [];
 
         if (actorRole === "patient") {
             if (actorID !== patientID) {

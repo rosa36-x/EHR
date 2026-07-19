@@ -131,7 +131,8 @@ export async function searchPatientsByName(nameSubstring) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("SearchPatientsByName", nameSubstring);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {

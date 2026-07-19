@@ -294,6 +294,7 @@ export const consentApi = {
   get: (id: string) => get(`/consents/${id}`),
   check: (id: string) => get(`/consents/${id}/check`),
   revoke: (id: string) => patch(`/consents/${id}/revoke`),
+  listByPatient: (patientID: string) => get(`/consents?patientID=${patientID}`),
 };
 
 // ── Permission Requests (sensitive-record access) ───────────────────────
@@ -308,6 +309,7 @@ export const permissionRequestApi = {
   get: (id: string) => get(`/permission-requests/${id}`),
   approve: (id: string) => patch(`/permission-requests/${id}/approve`),
   reject: (id: string) => patch(`/permission-requests/${id}/reject`),
+  listMine: () => get("/permission-requests"),
 };
 
 // ── Treatment Relationships ─────────────────────────────────────────────
@@ -342,9 +344,51 @@ export const biometricApi = {
 };
 // ── Audit ────────────────────────────────────────────────────────────────
 
+export interface AnomalyFlag {
+  flagID: string;
+  actorID: string;
+  actorRole: string;
+  actorOrg: string;
+  date: string;
+  ifScore: number;
+  lstmScore: number | null;
+  combinedScore: number;
+  priority: string;
+  topFeatures: { feature: string; contribution: number }[];
+  classification: string;
+  status: "PENDING" | "CONFIRMED" | "DISMISSED";
+  clarificationRequested: boolean;
+  clarificationText: string;
+  auditID: string;
+  reviewNotes?: string;
+}
+
+export interface AnomalySummary {
+  byStatus: Record<string, number>;
+  byDay: { date: string; count: number }[];
+  topActors: { actorID: string; actorOrg: string; count: number }[];
+  byPriority: Record<string, number>;
+  scoreDistribution: { range: string; count: number }[];
+}
+
+export const anomalyApi = {
+  list: (status?: string, limit = 50) =>
+    get<{ status: string; data: AnomalyFlag[] }>(
+      `/anomalies?${status ? `status=${status}&` : ""}limit=${limit}`,
+    ),
+  summary: () => get<{ status: string; data: AnomalySummary }>("/anomalies/summary"),
+  get: (id: string) => get<{ status: string; data: AnomalyFlag }>(`/anomalies/${id}`),
+  review: (id: string, status: "CONFIRMED" | "DISMISSED", notes?: string) =>
+    patch<{ status: string; data: AnomalyFlag }>(`/anomalies/${id}/review`, { status, notes }),
+  run: () => post<{ status: string; data: any }>("/anomalies/run"),
+  respond: (id: string, text: string) =>
+    post<{ status: string; data: AnomalyFlag }>(`/anomalies/${id}/respond`, { text }),
+};
+
 export const auditApi = {
   get: (id: string) => get(`/audits/${id}`),
   history: (auditID: string) => get(`/audit-history/${auditID}`),
+  list: () => get("/audit-history"),
 };
 
 // ── IPFS documents ───────────────────────────────────────────────────────

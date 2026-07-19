@@ -120,6 +120,59 @@ function PatientDashboard() {
   const [permissions, setPermissions] = useState(mockPermissionRequests);
   const [consents, setConsents] = useState(mockConsents);
 
+  useEffect(() => {
+    if (!session?.id) return;
+    permissionRequestApi
+      .listMine()
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setPermissions(
+            res.data.map((r: any) => ({
+              id: r.requestID,
+              doctorName: r.doctorID,
+              hospital: "—",
+              resourceType: r.resourceType,
+              resourceTitle: `${r.resourceType} (${r.resourceID})`,
+              reason: r.reason,
+              requestedAt: r.createdAt,
+              expiresInHours: r.expiresAt
+                ? Math.max(
+                    0,
+                    Math.round(
+                      (new Date(r.expiresAt).getTime() - Date.now()) / 3600000,
+                    ),
+                  )
+                : 0,
+              status: r.status,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // keep mock fallback if this fails — same pattern as profile fetch above
+      });
+
+    consentApi
+      .listByPatient(session.id)
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setConsents(
+            res.data.map((c: any) => ({
+              id: c.consentID,
+              org: c.granteeOrg?.replace(/MSP$/, "") ?? c.granteeOrg,
+              resourceType: c.resourceType,
+              resourceTitle: `${c.resourceType} · ${c.permission}`,
+              status: c.status,
+              expiresOn: c.expiryDate,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // keep mock fallback if this fails
+      });
+  }, [session?.id]);
+
   if (!session) return null;
 
   const displayName = profile?.fullName ?? session.name;
@@ -167,6 +220,19 @@ function Overview({
 }) {
   const pending = permissions.filter((p) => p.status === "PENDING").length;
   const activeConsents = consents.filter((c) => c.status === "ACTIVE").length;
+  const [relCount, setRelCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    treatmentRelationshipApi
+      .list()
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setRelCount(res.data.filter((r: any) => r.status === "ACTIVE").length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-6">
       <header className="rounded-xl border bg-gradient-to-br from-primary/10 via-surface to-surface p-6">
@@ -182,7 +248,7 @@ function Overview({
       <div className="grid gap-4 sm:grid-cols-3">
         <QuickStat
           label="Active care relationships"
-          value="2"
+          value={relCount === null ? "…" : String(relCount)}
           onClick={() => onGoto("relationships")}
         />
         <QuickStat
@@ -314,7 +380,7 @@ function Records({ patientID }: { patientID: string }) {
     })),
     ...labReports.map((l) => ({
       id: l.reportID, kind: "LAB_REPORT", title: l.reportType, sensitive: l.sensitivityLevel === "SENSITIVE",
-      date: l.createdAt, download: () => labReportApi.document(l.reportID),
+      date: l.createdAt, download: () => labReportApi.document(l.reportID, "hospital"),
     })),
   ].filter((r) => filter === "ALL" || r.kind === filter);
 
@@ -731,6 +797,30 @@ function Relationships() {
 function AuditView() {
   const [lookupID, setLookupID] = useState("");
   const [entries, setEntries] = useState(mockAudit);
+
+  useEffect(() => {
+    auditApi
+      .list()
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setEntries(
+            res.data.map((d: any) => ({
+              id: d.auditID,
+              actor: d.actorID,
+              actorRole: d.actorRole,
+              actorOrg: d.actorOrg || "—",
+              action: d.action,
+              resourceType: d.resourceType,
+              resourceId: d.resourceID,
+              timestamp: d.timestamp,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        // keep mock fallback if this fails
+      });
+  }, []);
 
   const lookup = async () => {
     if (!lookupID) return;

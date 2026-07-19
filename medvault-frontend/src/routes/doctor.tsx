@@ -134,7 +134,7 @@ function DoctorDashboard() {
       onNavigate={setTab}
       badgeTone="accent"
     >
-      {tab === "overview" && <Overview name={session.name} onGoto={setTab} />}
+      {tab === "overview" && <Overview name={session.name} doctorID={session.id!} onGoto={setTab} />}
       {tab === "search" && <PatientSearch />}
       {tab === "patients" && <MyPatients />}
       {tab === "consults" && <Consultations doctorID={session.id!} />}
@@ -150,11 +150,36 @@ function DoctorDashboard() {
 
 function Overview({
   name,
+  doctorID,
   onGoto,
 }: {
   name: string;
+  doctorID: string;
   onGoto: (id: string) => void;
 }) {
+  const [activeCount, setActiveCount] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    treatmentRelationshipApi
+      .list()
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setActiveCount(res.data.filter((r: any) => r.status === "ACTIVE").length);
+        }
+      })
+      .catch(() => {});
+
+    permissionRequestApi
+      .listMine()
+      .then((res: any) => {
+        if (res.status === "SUCCESS" && Array.isArray(res.data)) {
+          setPendingCount(res.data.filter((r: any) => r.status === "PENDING").length);
+        }
+      })
+      .catch(() => {});
+  }, [doctorID]);
+
   return (
     <div className="space-y-6">
       <header className="rounded-xl border bg-gradient-to-br from-accent via-surface to-surface p-6">
@@ -163,18 +188,23 @@ function Overview({
           {name}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          You have 3 active patients and 1 permission request pending.
+          You have {activeCount ?? "—"} active patient{activeCount === 1 ? "" : "s"} and{" "}
+          {pendingCount ?? "—"} permission request{pendingCount === 1 ? "" : "s"} pending.
         </p>
       </header>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Stat label="Active patients" value="3" onClick={() => onGoto("patients")} />
+        <Stat
+          label="Active patients"
+          value={activeCount === null ? "…" : String(activeCount)}
+          onClick={() => onGoto("patients")}
+        />
         <Stat
           label="Pending permission requests"
-          value="1"
+          value={pendingCount === null ? "…" : String(pendingCount)}
           tone="warn"
           onClick={() => onGoto("permissions")}
         />
-        <Stat label="Consultations today" value="4" onClick={() => onGoto("consults")} />
+        <Stat label="Consultations today" value="—" onClick={() => onGoto("consults")} />
       </div>
     </div>
   );

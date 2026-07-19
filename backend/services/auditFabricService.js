@@ -62,7 +62,8 @@ export async function getAuditLogsByActor(actorID) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("GetAuditLogsByActor", actorID);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {

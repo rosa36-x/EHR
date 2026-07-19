@@ -1,6 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { prescriptionApi, labReportApi, ApiError } from "@/lib/api";
+import {
+  prescriptionApi,
+  labReportApi,
+  anomalyApi,
+  ApiError,
+  type AnomalyFlag,
+  type AnomalySummary,
+} from "@/lib/api";
 import {
   Activity,
   Building2,
@@ -11,7 +18,25 @@ import {
   ShieldCheck,
   Sparkles,
   Download,
+  RefreshCw,
+  ChevronRight,
 } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import {
   DashboardShell,
   type NavItem,
@@ -19,6 +44,7 @@ import {
 import { DocumentCard } from "@/components/shared/document-card";
 import { AccessDenied } from "@/components/shared/access-denied";
 import { StatusPill } from "@/components/shared/status-pill";
+import { PriorityBadge } from "@/components/shared/priority-badge";
 import { SensitivityBadge } from "@/components/shared/sensitivity-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -247,21 +273,43 @@ function PharmacyFulfill() {
 // -------------------- Laboratory --------------------
 function LabView({ tab, labTechID }: { tab: string; labTechID: string }) {
   if (tab === "overview") {
-    return (
-      <div className="space-y-6">
-        <Header
-          org="Laboratory"
-          copy="Create and manage lab reports. Only reports you created appear here."
-        />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Stat label="Reports this month" value="12" />
-          <Stat label="Sensitive reports" value="2" />
-        </div>
-      </div>
-    );
+    return <LabOverview />;
   }
   if (tab === "create") return <LabCreate labTechID={labTechID} />;
   return <LabMine />;
+}
+
+const LAB_SENSITIVE_TYPES = [
+  "HIV_TEST",
+  "STI_TEST",
+  "GENETIC_TEST",
+  "DRUG_TEST",
+  "PREGNANCY_TEST",
+  "TOXICOLOGY",
+];
+
+function LabOverview() {
+  const [items] = useState<{ id: string; patientID: string; reportType: string }[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("medvault_labreports") ?? "[]");
+    } catch {
+      return [];
+    }
+  });
+  const sensitiveCount = items.filter((r) => LAB_SENSITIVE_TYPES.includes(r.reportType)).length;
+
+  return (
+    <div className="space-y-6">
+      <Header
+        org="Laboratory"
+        copy="Create and manage lab reports. Only reports you created appear here."
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Stat label="Reports you've created" value={String(items.length)} />
+        <Stat label="Sensitive reports" value={String(sensitiveCount)} />
+      </div>
+    </div>
+  );
 }
 
 function LabCreate({ labTechID }: { labTechID: string }) {
@@ -425,7 +473,7 @@ function GovernanceView({ tab }: { tab: string }) {
     );
   }
   if (tab === "audit") return <AuditExplorer />;
-  return <AnomalyPlaceholder />;
+  return <AnomalyDashboard />;
 }
 
 function AuditExplorer() {
@@ -527,38 +575,476 @@ function AuditExplorer() {
   );
 }
 
-function AnomalyPlaceholder() {
+
+const PRIORITY_COLORS: Record<string, string> = {
+  P1_high_confidence: "hsl(var(--destructive))",
+  P2_sequence_candidate: "hsl(var(--warn))",
+};
+const STATUS_COLORS: Record<string, string> = {
+  PENDING: "hsl(var(--warn))",
+  CONFIRMED: "hsl(var(--destructive))",
+  DISMISSED: "hsl(var(--muted-foreground))",
+};
+
+function AnomalyDashboard() {
+  const [subtab, setSubtab] = useState<"queue" | "summary">("queue");
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "PENDING" | "CONFIRMED" | "DISMISSED"
+  >("PENDING");
+  const [flags, setFlags] = useState<AnomalyFlag[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<AnomalyFlag | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadFlags = () => {
+    setLoading(true);
+    anomalyApi
+      .list(statusFilter === "ALL" ? undefined : statusFilter, 100)
+      .then((res) => setFlags(res.data))
+      .catch((err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Couldn't load anomaly flags",
+        ),
+      )
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadFlags();
+  }, [statusFilter]);
+
+  const runNow = () => {
+    setRefreshing(true);
+    anomalyApi
+      .run()
+      .then(() => {
+        toast.success("Detection cycle triggered");
+        loadFlags();
+      })
+      .catch((err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Couldn't trigger detection cycle",
+        ),
+      )
+      .finally(() => setRefreshing(false));
+  };
+
   return (
     <div className="space-y-4">
-      <SectionHeader
-        title="AI anomaly detection"
-        subtitle="Governed AI-driven flagging of suspicious access patterns."
-      />
-      <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed bg-surface-muted p-10 text-center">
-        <div className="rounded-full bg-muted p-3 text-muted-foreground">
-          <ShieldCheck className="h-6 w-6" />
-        </div>
-        <div className="max-w-md">
-          <div className="inline-flex items-center gap-2 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <SensitivityBadgeLite /> Coming soon
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeader
+          title="AI anomaly detection"
+          subtitle="Governed AI-driven flagging of suspicious access patterns."
+        />
+        <Button variant="outline" size="sm" onClick={runNow} disabled={refreshing}>
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh now
+        </Button>
+      </div>
+
+      <Tabs value={subtab} onValueChange={(v) => setSubtab(v as any)}>
+        <TabsList>
+          <TabsTrigger value="queue">Review queue</TabsTrigger>
+          <TabsTrigger value="summary">Summary</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="queue" className="mt-4 space-y-4">
+          <div className="flex items-center gap-2">
+            {(["PENDING", "CONFIRMED", "DISMISSED", "ALL"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  statusFilter === s
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {s === "ALL" ? "All" : s.charAt(0) + s.slice(1).toLowerCase()}
+              </button>
+            ))}
           </div>
-          <h3 className="mt-3 text-base font-semibold text-foreground">
-            Anomaly detection is planned but not yet live
-          </h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            When available, this panel will surface off-hours access bursts,
-            cross-org anomalies and unusual sensitive-record reads. We're not
-            showing sample stats here — they would be fabricated. Real numbers
-            will appear once the model and its governance guardrails ship.
-          </p>
+
+          {loading ? (
+            <EmptyState label="Loading flags…" />
+          ) : flags.length === 0 ? (
+            <EmptyState label="No flags in this view." />
+          ) : (
+            <div className="rounded-lg border bg-card shadow-sm">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Actor</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Signal</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="w-8" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {flags.map((f) => (
+                    <TableRow
+                      key={f.flagID}
+                      className="cursor-pointer"
+                      onClick={() => setSelected(f)}
+                    >
+                      <TableCell className="text-sm">
+                        {f.actorID}
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {f.actorOrg ? `· ${f.actorOrg}` : ""}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {f.date}
+                      </TableCell>
+                      <TableCell>
+                        <PriorityBadge priority={f.priority} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {f.topFeatures.slice(0, 2).map((tf) => tf.feature).join(", ") || "—"}
+                      </TableCell>
+                      <TableCell>
+                        <StatusPill status={f.status} />
+                      </TableCell>
+                      <TableCell>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="summary" className="mt-4">
+          <AnomalySummaryPanel />
+        </TabsContent>
+      </Tabs>
+
+      <FlagDetailDialog
+        flag={selected}
+        onClose={() => setSelected(null)}
+        onReviewed={() => {
+          setSelected(null);
+          loadFlags();
+        }}
+      />
+    </div>
+  );
+}
+
+function AnomalySummaryPanel() {
+  const [summary, setSummary] = useState<AnomalySummary | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    anomalyApi
+      .summary()
+      .then((res) => setSummary(res.data))
+      .catch((err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Couldn't load summary stats",
+        ),
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <EmptyState label="Loading summary…" />;
+  if (!summary) return <EmptyState label="No summary data available." />;
+
+  const byStatusData = Object.entries(summary.byStatus).map(([status, count]) => ({
+    status,
+    count,
+  }));
+  const byPriorityData = Object.entries(summary.byPriority).map(([priority, count]) => ({
+    priority,
+    count,
+  }));
+  const totalByPriority = byPriorityData.reduce((s, r) => s + r.count, 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-foreground">Detection tiers</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          High-confidence flags vs. lower-precision sequence candidates.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {byPriorityData.map((row) => (
+            <div key={row.priority} className="rounded-lg border p-4">
+              <div className="flex items-center justify-between">
+                <PriorityBadge priority={row.priority} />
+                <span className="text-2xl font-semibold text-foreground">
+                  {row.count}
+                </span>
+              </div>
+              <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${totalByPriority ? (row.count / totalByPriority) * 100 : 0}%`,
+                    backgroundColor: PRIORITY_COLORS[row.priority] ?? "hsl(var(--muted-foreground))",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Flags by status">
+          <ResponsiveContainer width="100%" height={240}>
+            <PieChart>
+              <Pie
+                data={byStatusData}
+                dataKey="count"
+                nameKey="status"
+                innerRadius={50}
+                outerRadius={80}
+                paddingAngle={2}
+              >
+                {byStatusData.map((row) => (
+                  <Cell
+                    key={row.status}
+                    fill={STATUS_COLORS[row.status] ?? "hsl(var(--muted-foreground))"}
+                  />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Flags per day (last 30 days)">
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={summary.byDay}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Line
+                type="monotone"
+                dataKey="count"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Top flagged actors (confirmed)">
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={summary.topActors} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+              <YAxis
+                type="category"
+                dataKey="actorID"
+                width={90}
+                tick={{ fontSize: 10 }}
+              />
+              <Tooltip />
+              <Bar dataKey="count" fill="hsl(var(--destructive))" radius={4} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard title="Ensemble score distribution">
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={summary.scoreDistribution}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="range" tick={{ fontSize: 10 }} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+              <Tooltip />
+              <Bar dataKey="count" fill="hsl(var(--primary))" radius={4} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
       </div>
     </div>
   );
 }
 
-function SensitivityBadgeLite() {
-  return <span className="text-[10px]">■</span>;
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-card p-5 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function FlagDetailDialog({
+  flag,
+  onClose,
+  onReviewed,
+}: {
+  flag: AnomalyFlag | null;
+  onClose: () => void;
+  onReviewed: () => void;
+}) {
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState<"CONFIRMED" | "DISMISSED" | null>(null);
+
+  useEffect(() => setNotes(""), [flag?.flagID]);
+
+  if (!flag) return null;
+
+  const review = (status: "CONFIRMED" | "DISMISSED") => {
+    setSubmitting(status);
+    anomalyApi
+      .review(flag.flagID, status, notes.trim() || undefined)
+      .then(() => {
+        toast.success(`Flag ${status === "CONFIRMED" ? "confirmed" : "dismissed"}`);
+        onReviewed();
+      })
+      .catch((err) =>
+        toast.error(err instanceof ApiError ? err.message : "Couldn't submit review"),
+      )
+      .finally(() => setSubmitting(null));
+  };
+
+  return (
+    <Dialog open={!!flag} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {flag.flagID}
+            <PriorityBadge priority={flag.priority} />
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 text-sm">
+          <div className="grid grid-cols-2 gap-3 rounded-lg border bg-surface-muted p-3 text-xs">
+            <div>
+              <div className="text-muted-foreground">Actor</div>
+              <div className="font-medium text-foreground">{flag.actorID}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Org · Role</div>
+              <div className="font-medium text-foreground">
+                {flag.actorOrg || "—"} · {flag.actorRole}
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Date</div>
+              <div className="font-medium text-foreground">{flag.date}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Classification</div>
+              <div className="font-medium text-foreground">{flag.classification}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Ensemble score</div>
+              <div className="font-medium text-foreground">{flag.ifScore.toFixed(3)}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">LSTM z-score</div>
+              <div className="font-medium text-foreground">
+                {flag.lstmScore == null ? (
+                  <span className="text-muted-foreground">n/a</span>
+                ) : (
+                  flag.lstmScore.toFixed(2)
+                )}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div className="text-muted-foreground">On-chain audit reference</div>
+              <div className="font-mono text-[11px] text-foreground">{flag.auditID}</div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              Contributing signals (std. dev. from actor's own baseline)
+            </div>
+            <div className="space-y-1.5">
+              {flag.topFeatures.length === 0 && (
+                <div className="text-xs text-muted-foreground">
+                  No feature breakdown on this flag.
+                </div>
+              )}
+              {flag.topFeatures.map((tf) => {
+                const max = Math.max(...flag.topFeatures.map((x) => x.contribution), 1);
+                return (
+                  <div key={tf.feature} className="flex items-center gap-2">
+                    <span className="w-40 shrink-0 text-xs text-foreground">
+                      {tf.feature}
+                    </span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${(tf.contribution / max) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">
+                      {tf.contribution.toFixed(1)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {flag.clarificationRequested && (
+            <div className="rounded-lg border p-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                Actor's explanation
+              </div>
+              <p className="mt-1 text-sm text-foreground">
+                {flag.clarificationText?.trim()
+                  ? flag.clarificationText
+                  : "No explanation submitted yet."}
+              </p>
+            </div>
+          )}
+
+          {flag.status === "PENDING" ? (
+            <div className="space-y-2">
+              <Label className="text-xs">Review notes (optional)</Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Reasoning for this decision…"
+                rows={3}
+              />
+            </div>
+          ) : (
+            <div className="rounded-lg border bg-surface-muted p-3 text-xs">
+              <span className="font-medium text-foreground">Already reviewed:</span>{" "}
+              <StatusPill status={flag.status} className="ml-1" />
+              {flag.reviewNotes && (
+                <p className="mt-1 text-muted-foreground">{flag.reviewNotes}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {flag.status === "PENDING" && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={!!submitting}
+              onClick={() => review("DISMISSED")}
+            >
+              {submitting === "DISMISSED" ? "Dismissing…" : "Dismiss"}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!!submitting}
+              onClick={() => review("CONFIRMED")}
+            >
+              {submitting === "CONFIRMED" ? "Confirming…" : "Confirm violation"}
+            </Button>
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // -------------------- Shared building blocks --------------------

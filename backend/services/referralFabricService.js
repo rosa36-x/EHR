@@ -128,7 +128,8 @@ export async function getReferralsByDoctor(doctorID, direction) {
         const { contract } = result;
 
         const raw = await contract.evaluateTransaction("GetReferralsByDoctor", doctorID, direction ?? "");
-        const data = JSON.parse(Buffer.from(raw).toString("utf8")) ?? [];
+        const text = Buffer.from(raw).toString("utf8");
+        const data = text ? JSON.parse(text) : [];
         return { status: "SUCCESS", data };
     } catch (err) {
         return { status: "FAILED", message: err.message };

@@ -119,7 +119,8 @@ export async function getTreatmentRelationshipsByDoctor(doctorID) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("GetTreatmentRelationshipsByDoctor", doctorID);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {
@@ -136,7 +137,8 @@ export async function getTreatmentRelationshipsByPatient(patientID) {
         client  = result.client;
         const { contract } = result;
         const raw = await contract.evaluateTransaction("GetTreatmentRelationshipsByPatient", patientID);
-        return { status: "SUCCESS", data: JSON.parse(Buffer.from(raw).toString("utf8")) ?? [] };
+        const text = Buffer.from(raw).toString("utf8");
+        return { status: "SUCCESS", data: text ? JSON.parse(text) : [] };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {
