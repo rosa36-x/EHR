@@ -8,7 +8,7 @@ import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
 
-export async function createPrescription(data, fileBuffer, actorID) {
+export async function createPrescription(data, fileBuffer, actorID, actorRole = "doctor", actorOrg = "HospitalMSP") {
     let gateway, client;
     try {
         if (!isValidRecordType("PRESCRIPTION", data.recordType)) {
@@ -47,7 +47,8 @@ export async function createPrescription(data, fileBuffer, actorID) {
 
         await logAudit({
             actorID:      actorID ?? data.doctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "CREATE",
             resourceType: "PRESCRIPTION",
             resourceID:   data.patientID,
@@ -78,7 +79,8 @@ export async function createPrescription(data, fileBuffer, actorID) {
     } catch (err) {
         await logAudit({
             actorID:      actorID ?? data.doctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "ACCESS_FAILED",
             resourceType: "PRESCRIPTION",
             resourceID:   data.patientID,

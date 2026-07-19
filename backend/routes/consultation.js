@@ -24,7 +24,9 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
     const result = await svc.createConsultation(
         { consultationID, patientID, doctorID, diagnosis, recordType },
         req.file.buffer,
-        req.user.id
+        req.user.id,
+        req.user.role,
+        req.user.org
     );
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
@@ -71,7 +73,9 @@ router.put("/:id", authenticate, upload.single("file"), async (req, res) => {
     const result = await svc.updateConsultation(
         { consultationID: req.params.id, diagnosis },
         req.file.buffer,
-        req.user.id
+        req.user.id,
+        req.user.role, 
+        req.user.org
     );
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);

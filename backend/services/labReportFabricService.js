@@ -9,7 +9,7 @@ import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth } from "./db.js";
 import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
 import { hasActivePermission } from "./permissionRequestFabricService.js";
-export async function createLabReport(data, fileBuffer, actorID) {
+export async function createLabReport(data, fileBuffer, actorID, actorRole = "org_actor", actorOrg = "") {
     let gateway, client;
     try {
         if (!isValidRecordType("LAB_REPORT", data.reportType)) {
@@ -46,7 +46,8 @@ export async function createLabReport(data, fileBuffer, actorID) {
 
         await logAudit({
             actorID:      actorID ?? data.labTechID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "CREATE",
             resourceType: "LAB_REPORT",
             resourceID:   data.patientID,
@@ -76,7 +77,8 @@ export async function createLabReport(data, fileBuffer, actorID) {
     } catch (err) {
         await logAudit({
             actorID:      actorID ?? data.labTechID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "ACCESS_FAILED",
             resourceType: "LAB_REPORT",
             resourceID:   data.patientID,
@@ -194,7 +196,7 @@ export async function getLabReportDocument(reportID, actorID, actorRole, orgName
     }
 }
 
-export async function updateLabReport(data, fileBuffer, actorID) {
+export async function updateLabReport(data, fileBuffer, actorID, actorRole = "org_actor", actorOrg = "") {
     let gateway, client;
     try {
         const { encryptedBuffer, keyRef } = await encryptDocument(fileBuffer);
@@ -221,7 +223,7 @@ export async function updateLabReport(data, fileBuffer, actorID) {
             updatedAt
         );
 
-        await logAudit({ actorID, actorRole: "doctor", action: "UPDATE", resourceType: "LAB_REPORT", resourceID: data.reportID });
+        await logAudit({ actorID, actorRole, actorOrg, action: "UPDATE", resourceType: "LAB_REPORT", resourceID: data.reportID });
 
         return { status: "SUCCESS", reportID: data.reportID, reportCID, reportHash, sensitivityLevel, encryptionKeyRef: keyRef };
     } catch (err) {

@@ -385,10 +385,45 @@ export const anomalyApi = {
     post<{ status: string; data: AnomalyFlag }>(`/anomalies/${id}/respond`, { text }),
 };
 
+export interface AuditEntry {
+  auditID: string;
+  actorID: string;
+  actorRole: string;
+  actorOrg: string;
+  action: string;
+  resourceType: string;
+  resourceID: string;
+  timestamp: string;
+}
+
+export interface AuditListAllParams {
+  org?: string;
+  actorId?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
 export const auditApi = {
   get: (id: string) => get(`/audits/${id}`),
   history: (auditID: string) => get(`/audit-history/${auditID}`),
   list: () => get("/audit-history"),
+
+  listAll: (params: AuditListAllParams = {}) => {
+    const qs = new URLSearchParams();
+    if (params.org) qs.set("org", params.org);
+    if (params.actorId) qs.set("actorId", params.actorId);
+    if (params.action) qs.set("action", params.action);
+    if (params.from) qs.set("from", params.from);
+    if (params.to) qs.set("to", params.to);
+    qs.set("page", String(params.page ?? 1));
+    qs.set("limit", String(params.limit ?? 50));
+    return get<{ status: string; data: AuditEntry[]; page: number; limit: number }>(
+      `/audit-history/all?${qs.toString()}`,
+    );
+  },
 };
 
 // ── IPFS documents ───────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ import { canAccessRecord } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
 
-export async function createReferral(data, fileBuffer, actorID) {
+export async function createReferral(data, fileBuffer, actorID, actorRole = "doctor", actorOrg = "HospitalMSP") {
     let gateway, client;
     try {
         if (!isValidRecordType("REFERRAL", data.referralType)) {
@@ -44,7 +44,8 @@ export async function createReferral(data, fileBuffer, actorID) {
 
         await logAudit({
             actorID:      actorID ?? data.fromDoctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "CREATE",
             resourceType: "REFERRAL",
             resourceID:   data.patientID,
@@ -75,7 +76,8 @@ export async function createReferral(data, fileBuffer, actorID) {
     } catch (err) {
         await logAudit({
             actorID:      actorID ?? data.fromDoctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "ACCESS_FAILED",
             resourceType: "REFERRAL",
             resourceID:   data.patientID,

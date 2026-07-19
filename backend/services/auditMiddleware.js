@@ -39,7 +39,11 @@ import { AuditLogMirror } from "./db.js";
  *   should treat null as "couldn't establish an on-chain link this time").
  */
 export async function logAudit({ actorID, actorRole, action, resourceType, resourceID, actorOrg = "" }) {
+    if (!actorOrg && actorRole === "doctor") {
+        actorOrg = "HospitalMSP";
+    }
     let gateway, client;
+
     const auditID   = generateID("audit");
     const timestamp = new Date().toISOString();
     try {

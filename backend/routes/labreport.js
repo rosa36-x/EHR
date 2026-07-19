@@ -24,7 +24,7 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
         });
     }
 
-    const result = await svc.createLabReport(req.body, req.file.buffer, req.user.id);
+    const result = await svc.createLabReport(req.body, req.file.buffer, req.user.id, req.user.role, req.user.org);    
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
 });
 
@@ -74,7 +74,9 @@ router.put("/:id", authenticate, upload.single("file"), async (req, res) => {
     const result = await svc.updateLabReport(
         { reportID: req.params.id, reportType, status },
         req.file.buffer,
-        req.user.id
+        req.user.id,
+        req.user.role,
+        req.user.org
     );
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);

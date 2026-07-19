@@ -27,7 +27,9 @@ router.post("/", authenticate, upload.single("file"), async (req, res) => {
     const result = await svc.createReferral(
         { referralID, patientID, fromDoctorID, toDoctorID, referralReason, referralType },
         req.file.buffer,
-        req.user.id
+        req.user.id,
+        req.user.role, 
+        req.user.org
     );
 
     return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);

@@ -10,7 +10,7 @@ import { PatientAuth, Doctor } from "./db.js";
 import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
 import { hasActivePermission } from "./permissionRequestFabricService.js";
 
-export async function createConsultation(data, fileBuffer, actorID) {
+export async function createConsultation(data, fileBuffer, actorID, actorRole = "doctor", actorOrg = "HospitalMSP") {
     let gateway, client;
     try {
         if (!isValidRecordType("CONSULTATION", data.recordType)) {
@@ -48,7 +48,8 @@ export async function createConsultation(data, fileBuffer, actorID) {
 
         await logAudit({
             actorID:      actorID ?? data.doctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "CREATE",
             resourceType: "CONSULTATION",
             resourceID:   data.patientID,
@@ -79,7 +80,8 @@ export async function createConsultation(data, fileBuffer, actorID) {
     } catch (err) {
         await logAudit({
             actorID:      actorID ?? data.doctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "ACCESS_FAILED",
             resourceType: "CONSULTATION",
             resourceID:   data.patientID,
@@ -207,7 +209,7 @@ export async function getConsultationsByPatient(patientID, actorID, actorRole) {
         if (client)  client.close();
     }
 }
-export async function updateConsultation(data, fileBuffer, actorID) {
+export async function updateConsultation(data, fileBuffer, actorID, actorRole = "doctor", actorOrg = "HospitalMSP") {
     let gateway, client;
     try {
         const { encryptedBuffer, keyRef } = await encryptDocument(fileBuffer);
@@ -233,7 +235,8 @@ export async function updateConsultation(data, fileBuffer, actorID) {
 
         await logAudit({
             actorID:      actorID ?? data.doctorID,
-            actorRole:    "doctor",
+            actorRole,
+            actorOrg,
             action:       "UPDATE",
             resourceType: "CONSULTATION",
             resourceID:   data.consultationID,

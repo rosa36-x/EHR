@@ -1,12 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+
 import {
   prescriptionApi,
   labReportApi,
   anomalyApi,
+  auditApi,
   ApiError,
   type AnomalyFlag,
   type AnomalySummary,
+  type AuditEntry,
 } from "@/lib/api";
 import {
   Activity,
@@ -75,7 +78,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getSession, type Org } from "@/lib/session";
-import { mockAudit, mockRecords, sensitiveCategories } from "@/lib/mock-data";
+import { mockRecords, sensitiveCategories } from "@/lib/mock-data";
+
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/org")({
@@ -476,17 +480,51 @@ function GovernanceView({ tab }: { tab: string }) {
   return <AnomalyDashboard />;
 }
 
+const ORG_FILTER_OPTIONS: { label: string; value: string }[] = [
+  // NOTE: "Hospital" has no real actorOrg value in the mirror yet — doctor-
+  // authored audit rows write actorOrg: "" (see auditMiddleware.js). This
+  // filter will return zero rows until that's fixed backend-side. Left in
+  // so the gap is visible rather than silently removing the option.
+  { label: "Hospital", value: "HospitalMSP" },
+  { label: "Pharmacy", value: "PharmacyMSP" },
+  { label: "Laboratory", value: "LaboratoryMSP" },
+  { label: "Governance", value: "GovernanceMSP" },
+];
+
 function AuditExplorer() {
   const [org, setOrg] = useState<string>("ALL");
   const [action, setAction] = useState<string>("ALL");
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
+  const [entries, setEntries] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filtered = mockAudit.filter(
-    (a) =>
-      (org === "ALL" || a.actorOrg === org) &&
-      (action === "ALL" || a.action === action),
+  // Server-side filter: org + date range (action filtered client-side below,
+  // so the action dropdown can be derived from the org/date-scoped result
+  // set rather than from every entry ever logged).
+  useEffect(() => {
+    setLoading(true);
+    auditApi
+      .listAll({
+        org: org === "ALL" ? undefined : org,
+        from: from || undefined,
+        to: to || undefined,
+        limit: 200,
+      })
+      .then((res) => setEntries(res.data))
+      .catch((err) =>
+        toast.error(
+          err instanceof ApiError ? err.message : "Couldn't load audit log",
+        ),
+      )
+      .finally(() => setLoading(false));
+  }, [org, from, to]);
+
+  const filtered = entries.filter(
+    (e) => action === "ALL" || e.action === action,
   );
 
-  const actions = Array.from(new Set(mockAudit.map((a) => a.action)));
+  const actions = Array.from(new Set(entries.map((e) => e.action)));
 
   return (
     <div className="space-y-4">
@@ -503,10 +541,11 @@ function AuditExplorer() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All orgs</SelectItem>
-              <SelectItem value="Hospital">Hospital</SelectItem>
-              <SelectItem value="Pharmacy">Pharmacy</SelectItem>
-              <SelectItem value="Laboratory">Laboratory</SelectItem>
-              <SelectItem value="Governance">Governance</SelectItem>
+              {ORG_FILTER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -528,11 +567,11 @@ function AuditExplorer() {
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">From</Label>
-          <Input type="date" />
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">To</Label>
-          <Input type="date" />
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>
 
@@ -542,39 +581,51 @@ function AuditExplorer() {
             <TableRow>
               <TableHead>When</TableHead>
               <TableHead>Actor</TableHead>
-              <TableHead>Role · Org</TableHead>
               <TableHead>Action</TableHead>
               <TableHead>Resource</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((e) => (
-              <TableRow key={e.id}>
-                <TableCell className="text-xs text-muted-foreground">
-                  {new Date(e.timestamp).toLocaleString()}
-                </TableCell>
-                <TableCell className="text-sm">{e.actor}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {e.actorRole} · {e.actorOrg}
-                </TableCell>
-                <TableCell>
-                  <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px]">
-                    {e.action}
-                  </span>
-                </TableCell>
-                <TableCell className="text-xs">
-                  {e.resourceType}{" "}
-                  <span className="text-muted-foreground">({e.resourceId})</span>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  Loading…
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
+                  No audit entries match these filters.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filtered.map((e) => (
+                <TableRow key={e.auditID}>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {new Date(e.timestamp).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {e.actorRole} · {e.actorID}
+                    {e.actorOrg ? ` · ${e.actorOrg}` : ""}
+                  </TableCell>
+                  <TableCell>
+                    <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px]">
+                      {e.action}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {e.resourceType}{" "}
+                    <span className="text-muted-foreground">({e.resourceID})</span>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
     </div>
   );
 }
-
 
 const PRIORITY_COLORS: Record<string, string> = {
   P1_high_confidence: "hsl(var(--destructive))",
