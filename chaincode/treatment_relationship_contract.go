@@ -47,6 +47,10 @@ func (s *SmartContract) CreateTreatmentRelationship(
 		return fmt.Errorf("treatment relationship %s already exists", relationshipID)
 	}
 
+	if _, perr := time.Parse(time.RFC3339, dormantAfter); perr != nil {
+		return fmt.Errorf("dormantAfter must be RFC3339: %v", perr)
+	}
+
 	rel := models.TreatmentRelationship{
 		RelationshipID:   relationshipID,
 		PatientID:        patientID,
@@ -125,14 +129,12 @@ func (s *SmartContract) CheckActiveTreatmentRelationship(
 		return false, nil
 	}
 
-	// Auto-detect dormancy
+	// Pure read: dormancy is evaluated, not persisted. This function is
+	// invoked via evaluateTransaction, where any PutState is discarded, so
+	// the on-chain status only changes through UpdateTreatmentRelationshipStatus.
+	// Fail closed on an unparseable DormantAfter.
 	dormant, err := time.Parse(time.RFC3339, rel.DormantAfter)
-	if err == nil && time.Now().After(dormant) {
-		// Auto-mark dormant on-chain
-		rel.Status    = "DORMANT"
-		rel.UpdatedAt = time.Now().Format(time.RFC3339)
-		relJSON, _   := json.Marshal(rel)
-		ctx.GetStub().PutState(treatmentRelationshipKey(rel.RelationshipID), relJSON)
+	if err != nil || time.Now().After(dormant) {
 		return false, nil
 	}
 
@@ -184,6 +186,10 @@ func (s *SmartContract) ReactivateTreatmentRelationship(
 
 	if rel.Status == "DISCHARGED" {
 		return fmt.Errorf("cannot reactivate a DISCHARGED relationship")
+	}
+
+	if _, perr := time.Parse(time.RFC3339, dormantAfter); perr != nil {
+		return fmt.Errorf("dormantAfter must be RFC3339: %v", perr)
 	}
 
 	rel.Status       = "ACTIVE"

@@ -1,0 +1,301 @@
+diff --git a/backend/services/emergencyFabricService.js b/backend/services/emergencyFabricService.js
+index 40c47e1..e860ec4 100644
+--- a/backend/services/emergencyFabricService.js
++++ b/backend/services/emergencyFabricService.js
+@@ -12,6 +12,36 @@ import { createTreatmentRelationship, dischargePatient } from "./treatmentRelati
+ // should normally end an emergency episode well before this fires.
+ const EMERGENCY_ACCESS_SAFETY_NET_HOURS = 24;
+ 
++// Moves the on-chain EmergencyAccess record out of ACTIVE (CLOSED or ABORTED).
++// Best-effort: callers have already dealt with the actual access, so a ledger
++// hiccup here is logged and never turns a revoked access back into an error.
++// Pass an open contract to reuse its connection, otherwise one is opened.
++async function markLedgerEmergencyStatus(emergencyAccessID, status, existingContract) {
++    let gateway, client;
++    try {
++        let contract = existingContract;
++        if (!contract) {
++            const result = await getContract("hospital");
++            gateway  = result.gateway;
++            client   = result.client;
++            contract = result.contract;
++        }
++        await contract.submitTransaction(
++            "UpdateEmergencyAccessStatus",
++            emergencyAccessID,
++            status,
++            new Date().toISOString()
++        );
++        return true;
++    } catch (err) {
++        console.error(`[EmergencyAccess] Failed to mark ledger record ${emergencyAccessID} ${status}:`, err.message);
++        return false;
++    } finally {
++        if (gateway) await gateway.close();
++        if (client)  client.close();
++    }
++}
++
+ export async function createEmergencyAccess(data, actorID) {
+     let gateway, client;
+     try {
+@@ -88,15 +118,14 @@ export async function createEmergencyAccess(data, actorID) {
+                 "[EmergencyAccess] Failed to create backing treatment relationship:",
+                 relationshipResult.message
+             );
++            await markLedgerEmergencyStatus(emergencyAccessID, "ABORTED", contract);
+             return { status: "FAILED", message: "Failed to grant emergency access relationship." };
+         }
+ 
+         // Track the emergencyAccessID <-> relationshipID link and expiry so
+-        // closeEmergencyAccess() knows what to revoke. The Fabric ledger's
+-        // EmergencyAccess record has no status-update transaction today
+-        // (only Create/Get — see chaincode/emergency_contract.go), so this
+-        // Mongo-side log is the source of truth for "is this episode still
+-        // open" until that chaincode function exists.
++        // closeEmergencyAccess() knows what to revoke. The ledger record's
++        // status mirrors this (ACTIVE -> CLOSED/ABORTED), but this Mongo log
++        // is what the close flow and the duplicate check read.
+         try {
+             await EmergencyAccessLog.create({
+                 emergencyAccessID,
+@@ -113,6 +142,7 @@ export async function createEmergencyAccess(data, actorID) {
+             // relationship, so revoke it now rather than leave it open.
+             console.error("[EmergencyAccess] Failed to write EmergencyAccessLog, revoking relationship:", logErr.message);
+             await dischargePatient(relationshipResult.relationshipID, data.doctorID, true);
++            await markLedgerEmergencyStatus(emergencyAccessID, "ABORTED", contract);
+             return { status: "FAILED", message: "Failed to record emergency access." };
+         }
+ 
+@@ -182,10 +212,9 @@ export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole)
+  * Revokes the doctor's actual access immediately by discharging the backing
+  * ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship (this is the part that
+  * matters for security — CheckActiveTreatmentRelationship will return false
+- * for it right away). The Fabric EmergencyAccess ledger record itself keeps
+- * saying ACTIVE, since there's no chaincode function to update its status
+- * yet — this Mongo log's `status` field is the source of truth for that
+- * until one exists.
++ * for it right away). It then marks the on-chain EmergencyAccess record
++ * CLOSED (best-effort, via UpdateEmergencyAccessStatus) so the ledger no
++ * longer shows the episode as ACTIVE.
+  *
+  * Only the doctor who opened the emergency access (or, in the future, some
+  * hospital-admin role) should be able to close it — enforced by the caller
+@@ -215,6 +244,8 @@ export async function closeEmergencyAccess(emergencyAccessID, actorID, actorRole
+             return { status: "FAILED", message: "Failed to revoke the underlying access relationship." };
+         }
+ 
++        await markLedgerEmergencyStatus(emergencyAccessID, "CLOSED");
++
+         const closedAt = new Date().toISOString();
+         log.status   = "CLOSED";
+         log.closedAt = closedAt;
+diff --git a/chaincode/emergency_contract.go b/chaincode/emergency_contract.go
+index 4799c30..328d086 100644
+--- a/chaincode/emergency_contract.go
++++ b/chaincode/emergency_contract.go
+@@ -3,6 +3,7 @@ package main
+ import (
+ 	"encoding/json"
+ 	"fmt"
++	"time"
+ 
+ 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+ 	"github.com/rosa36-x/EHR/chaincode/models"
+@@ -79,4 +80,62 @@ func (s *SmartContract) GetEmergencyAccess(
+ 	}
+ 
+ 	return &emergency, nil
+-}
+\ No newline at end of file
++}
++
++// UpdateEmergencyAccessStatus ends an emergency access record. The only
++// transitions allowed are ACTIVE -> CLOSED (explicitly closed by the doctor)
++// and ACTIVE -> ABORTED (the access could not be fully set up). Both are
++// terminal; repeating the same transition is a no-op so a retry is safe.
++func (s *SmartContract) UpdateEmergencyAccessStatus(
++	ctx contractapi.TransactionContextInterface,
++	emergencyAccessID string,
++	status string,
++	updatedAt string,
++) error {
++
++	err := policy.EnforcePolicy(ctx, "UPDATE_EMERGENCY_ACCESS")
++	if err != nil {
++		return err
++	}
++
++	if status != "CLOSED" && status != "ABORTED" {
++		return fmt.Errorf("status must be CLOSED or ABORTED, got %q", status)
++	}
++
++	if _, perr := time.Parse(time.RFC3339, updatedAt); perr != nil {
++		return fmt.Errorf("updatedAt must be RFC3339: %v", perr)
++	}
++
++	emergencyJSON, err := ctx.GetStub().GetState("EA_" + emergencyAccessID)
++	if err != nil {
++		return err
++	}
++	if emergencyJSON == nil {
++		return fmt.Errorf("emergency access %s does not exist", emergencyAccessID)
++	}
++
++	var emergency models.EmergencyAccess
++	if err := json.Unmarshal(emergencyJSON, &emergency); err != nil {
++		return err
++	}
++
++	if emergency.Status == status {
++		return nil
++	}
++	if emergency.Status != "ACTIVE" {
++		return fmt.Errorf(
++			"emergency access %s is already %s and cannot become %s",
++			emergencyAccessID, emergency.Status, status,
++		)
++	}
++
++	emergency.Status = status
++	emergency.UpdatedAt = updatedAt
++
++	updatedJSON, err := json.Marshal(emergency)
++	if err != nil {
++		return err
++	}
++
++	return ctx.GetStub().PutState("EA_"+emergencyAccessID, updatedJSON)
++}
+diff --git a/chaincode/models/emergency.go b/chaincode/models/emergency.go
+index a307878..d3161f1 100644
+--- a/chaincode/models/emergency.go
++++ b/chaincode/models/emergency.go
+@@ -7,4 +7,5 @@ type EmergencyAccess struct {
+ 	Reason            string `json:"reason"`
+ 	Status            string `json:"status"`
+ 	Timestamp         string `json:"timestamp"`
++	UpdatedAt         string `json:"updatedAt,omitempty"`
+ }
+\ No newline at end of file
+diff --git a/chaincode/policy/policy_registry.go b/chaincode/policy/policy_registry.go
+index 8c721d8..874b81b 100644
+--- a/chaincode/policy/policy_registry.go
++++ b/chaincode/policy/policy_registry.go
+@@ -44,6 +44,7 @@ var PolicyRegistry = map[string][]string{
+ 	// ── Emergency Access ──────────────────────────────────────────────────────
+ 	"CREATE_EMERGENCY_ACCESS": {"HospitalMSP"},
+ 	"GET_EMERGENCY_ACCESS":    {"HospitalMSP"},
++	"UPDATE_EMERGENCY_ACCESS": {"HospitalMSP"},
+ 
+ 	// ── Permission Request ────────────────────────────────────────────────────
+ 	"CREATE_PERMISSION_REQUEST":  {"HospitalMSP"},
+diff --git a/medvault-tests/jest/src/unit/emergencyFabricService.test.js b/medvault-tests/jest/src/unit/emergencyFabricService.test.js
+index 8acb594..8cff53a 100644
+--- a/medvault-tests/jest/src/unit/emergencyFabricService.test.js
++++ b/medvault-tests/jest/src/unit/emergencyFabricService.test.js
+@@ -9,6 +9,8 @@
+  *     ({ requirePatientApproval: false })
+  *   - a failed EmergencyAccessLog write revokes the relationship instead of
+  *     leaving an access nobody can close
++ *   - an episode that fails to set up is marked ABORTED on the ledger, and
++ *     closing one marks it CLOSED (best-effort, never fails the request)
+  */
+ 
+ 'use strict';
+@@ -38,6 +40,8 @@ const DOCTOR  = 'DOC_E1';
+ const PATIENT = 'PAT_E1';
+ const REASON  = 'Patient unconscious, needs immediate treatment';
+ const input   = { patientID: PATIENT, doctorID: DOCTOR, reason: REASON };
++const ledgerUpdates = () =>
++  contract.submitTransaction.mock.calls.filter((c) => c[0] === 'UpdateEmergencyAccessStatus');
+ 
+ beforeEach(() => {
+   jest.clearAllMocks();
+@@ -95,6 +99,8 @@ describe('createEmergencyAccess', () => {
+     expect(r.status).toBe('FAILED');
+     expect(db.EmergencyAccessLog.create).not.toHaveBeenCalled();
+     expect(trSvc.dischargePatient).not.toHaveBeenCalled();
++    expect(ledgerUpdates()).toHaveLength(1);
++    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_UNIT_0001', 'ABORTED']);
+   });
+ 
+   test('log write fails -> relationship is discharged, FAILED, no patient SMS', async () => {
+@@ -103,5 +109,77 @@ describe('createEmergencyAccess', () => {
+     expect(r.status).toBe('FAILED');
+     expect(trSvc.dischargePatient).toHaveBeenCalledWith('TR_E1', DOCTOR, true);
+     expect(notif.notify).not.toHaveBeenCalled();
++    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_UNIT_0001', 'ABORTED']);
++  });
++
++  test('success never touches the ledger status', async () => {
++    await svc.createEmergencyAccess(input, DOCTOR);
++    expect(ledgerUpdates()).toHaveLength(0);
++  });
++
++  test('ledger ABORTED update failing does not change the FAILED result', async () => {
++    trSvc.createTreatmentRelationship.mockResolvedValue({ status: 'FAILED', message: 'boom' });
++    contract.submitTransaction.mockImplementation(async (fn) => {
++      if (fn === 'UpdateEmergencyAccessStatus') throw new Error('ledger down');
++      return Buffer.from('');
++    });
++    const r = await svc.createEmergencyAccess(input, DOCTOR);
++    expect(r.status).toBe('FAILED');
++    expect(r.message).toBe('Failed to grant emergency access relationship.');
++  });
++});
++
++describe('closeEmergencyAccess', () => {
++  const makeLog = (over = {}) => ({
++    emergencyAccessID: 'EA_C1', relationshipID: 'TR_C1', doctorID: DOCTOR, patientID: PATIENT,
++    status: 'ACTIVE', save: jest.fn().mockResolvedValue(undefined), ...over,
++  });
++
++  test('success: relationship discharged, ledger marked CLOSED, log saved', async () => {
++    const log = makeLog();
++    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
++    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
++    expect(r.status).toBe('SUCCESS');
++    expect(trSvc.dischargePatient).toHaveBeenCalledWith('TR_C1', DOCTOR, true);
++    expect(ledgerUpdates()).toHaveLength(1);
++    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_C1', 'CLOSED']);
++    expect(log.status).toBe('CLOSED');
++    expect(log.save).toHaveBeenCalled();
++  });
++
++  test('ledger CLOSED update failing still closes the episode', async () => {
++    const log = makeLog();
++    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
++    contract.submitTransaction.mockImplementation(async () => { throw new Error('ledger down'); });
++    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
++    expect(r.status).toBe('SUCCESS');
++    expect(log.status).toBe('CLOSED');
++    expect(log.save).toHaveBeenCalled();
++  });
++
++  test('discharge failure -> FAILED, ledger untouched, log stays ACTIVE', async () => {
++    const log = makeLog();
++    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
++    trSvc.dischargePatient.mockResolvedValue({ status: 'FAILED', message: 'nope' });
++    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
++    expect(r.status).toBe('FAILED');
++    expect(ledgerUpdates()).toHaveLength(0);
++    expect(log.status).toBe('ACTIVE');
++  });
++
++  test('another doctor -> ACCESS_DENIED, nothing changes', async () => {
++    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
++    const r = await svc.closeEmergencyAccess('EA_C1', 'DOC_OTHER', 'doctor');
++    expect(r.status).toBe('ACCESS_DENIED');
++    expect(trSvc.dischargePatient).not.toHaveBeenCalled();
++    expect(ledgerUpdates()).toHaveLength(0);
++  });
++
++  test('already closed -> FAILED, nothing changes', async () => {
++    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog({ status: 'CLOSED' }));
++    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
++    expect(r.status).toBe('FAILED');
++    expect(trSvc.dischargePatient).not.toHaveBeenCalled();
++    expect(ledgerUpdates()).toHaveLength(0);
+   });
+ });

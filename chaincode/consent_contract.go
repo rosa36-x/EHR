@@ -75,6 +75,12 @@ func (s *SmartContract) GrantConsent(
 		return fmt.Errorf("consent %s already exists", consentID)
 	}
 
+	if expiryDate != "" {
+		if _, perr := time.Parse(time.RFC3339, expiryDate); perr != nil {
+			return fmt.Errorf("expiryDate must be RFC3339 or empty: %v", perr)
+		}
+	}
+
 	consent := models.Consent{
 		ConsentID:    consentID,
 		PatientID:    patientID,
@@ -220,6 +226,20 @@ func (s *SmartContract) HasActiveConsent(
 		return false, err
 	}
 
+	// Bind granteeOrg to the caller: only HospitalMSP may query on behalf of
+	// another org; every other org may only ask about itself.
+	callerOrg, err := ctx.GetClientIdentity().GetMSPID()
+	if err != nil {
+		return false, err
+	}
+	if callerOrg != "HospitalMSP" && callerOrg != granteeOrg {
+		return false, fmt.Errorf(
+			"access denied: %s may not query consent on behalf of %s",
+			callerOrg,
+			granteeOrg,
+		)
+	}
+
 	flagCollection, ok := consentFlagCollectionForOrg(granteeOrg)
 	if !ok {
 		return false, nil
@@ -241,7 +261,8 @@ func (s *SmartContract) HasActiveConsent(
 
 	if flag.ExpiryDate != "" {
 		expiry, err := time.Parse(time.RFC3339, flag.ExpiryDate)
-		if err == nil && time.Now().After(expiry) {
+		// Fail closed: an unparseable expiry must not mean "never expires".
+		if err != nil || time.Now().After(expiry) {
 			return false, nil
 		}
 	}
@@ -284,7 +305,18 @@ func (s *SmartContract) RevokeConsent(
 		return err
 	}
 
-	if flagCollection, ok := consentFlagCollectionForOrg(consent.GranteeOrg); ok {
+	// Only flip the mirrored flag if this consent is the one the flag
+	// currently reflects ("latest grant wins" index). Revoking a superseded
+	// consent must not kill a newer active grant for the same
+	// (patient, org, resourceType).
+	idxBytes, err := ctx.GetStub().GetPrivateData(
+		ConsentCollection,
+		consentIndexKey(consent.PatientID, consent.GranteeOrg, consent.ResourceType),
+	)
+	if err != nil {
+		return err
+	}
+	if flagCollection, ok := consentFlagCollectionForOrg(consent.GranteeOrg); ok && (len(idxBytes) == 0 || string(idxBytes) == consentID) {
 		flag := models.ConsentFlag{
 			Status:     "REVOKED",
 			ExpiryDate: consent.ExpiryDate,
