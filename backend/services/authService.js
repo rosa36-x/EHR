@@ -5,7 +5,13 @@ import { Doctor, OrgActor, PatientAuth, OTP } from "./db.js";
 import { sendSMS } from "./notificationService.js";
 import { generateID } from "./idService.js";
 
-const JWT_SECRET       = process.env.JWT_SECRET ?? "medvault-dev-secret-change-in-prod";
+const DEV_JWT_SECRET   = "medvault-dev-secret-change-in-prod";
+// `||` (not `??`) so an empty JWT_SECRET= line in .env also counts as unset.
+const JWT_SECRET       = process.env.JWT_SECRET || DEV_JWT_SECRET;
+if (process.env.NODE_ENV === "production" && JWT_SECRET === DEV_JWT_SECRET) {
+    throw new Error("JWT_SECRET must be set when NODE_ENV=production.");
+}
+const MAX_OTP_ATTEMPTS = 5;
 const DOCTOR_JWT_EXP   = "8h";
 const PATIENT_JWT_EXP  = "24h";
 const ORG_ACTOR_JWT_EXP = "8h";
@@ -25,6 +31,30 @@ function generateToken(payload, expiresIn) {
 
 export function verifyToken(token) {
     return jwt.verify(token, JWT_SECRET);
+}
+
+/**
+ * Check an OTP guess. The attempt is counted atomically BEFORE comparing, so
+ * parallel guesses can't slip past the limit. After MAX_OTP_ATTEMPTS the OTP
+ * is deleted and a new one must be requested (even the correct code fails).
+ */
+async function checkOTP(phone, role, otp) {
+    const record = await OTP.findOneAndUpdate(
+        { phone, role },
+        { $inc: { attempts: 1 } },
+        { new: true }
+    );
+    if (!record) {
+        return { ok: false, message: "OTP expired or not found" };
+    }
+    if (record.attempts > MAX_OTP_ATTEMPTS) {
+        await OTP.deleteMany({ phone, role });
+        return { ok: false, message: "Too many incorrect attempts. Request a new OTP." };
+    }
+    if (record.otp !== otp) {
+        return { ok: false, message: "Invalid OTP" };
+    }
+    return { ok: true };
 }
 
 // ── Doctor Auth ───────────────────────────────────────────────────────────────
@@ -143,19 +173,17 @@ export async function initiateDoctorOTP(phone) {
  */
 export async function verifyDoctorOTP(phone, otp) {
     try {
-        const record = await OTP.findOne({ phone, role: "doctor" });
-
-        if (!record) {
-            return { status: "FAILED", message: "OTP expired or not found" };
-        }
-
-        if (record.otp !== otp) {
-            return { status: "FAILED", message: "Invalid OTP" };
+        const check = await checkOTP(phone, "doctor", otp);
+        if (!check.ok) {
+            return { status: "FAILED", message: check.message };
         }
 
         await OTP.deleteMany({ phone, role: "doctor" });
 
         const doctor = await Doctor.findOne({ $or: [{ phone }, { email: phone }] });
+        if (!doctor) {
+            return { status: "FAILED", message: "Doctor not found" };
+        }
 
         const token = generateToken(
             {
@@ -234,19 +262,17 @@ export async function initiatePatientOTP(phone) {
  */
 export async function verifyPatientOTP(phone, otp) {
     try {
-        const record = await OTP.findOne({ phone, role: "patient" });
-
-        if (!record) {
-            return { status: "FAILED", message: "OTP expired or not found" };
-        }
-
-        if (record.otp !== otp) {
-            return { status: "FAILED", message: "Invalid OTP" };
+        const check = await checkOTP(phone, "patient", otp);
+        if (!check.ok) {
+            return { status: "FAILED", message: check.message };
         }
 
         await OTP.deleteMany({ phone, role: "patient" });
 
         const patient = await PatientAuth.findOne({ phone });
+        if (!patient) {
+            return { status: "FAILED", message: "Patient not found" };
+        }
 
         const token = generateToken(
             {

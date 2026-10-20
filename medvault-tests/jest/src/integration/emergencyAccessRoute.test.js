@@ -108,3 +108,30 @@ describe('POST /emergency-access', () => {
     expect((await post(b.token, { patientID: 'PAT_X', reason: REASON })).status).toBe(200);
   });
 });
+
+describe('GET /emergency-access/:id and PATCH /:id/close status codes', () => {
+  const get   = (token) => supertest(app).get('/emergency-access/EA0001').set('Authorization', `Bearer ${token}`);
+  const close = (token) => supertest(app).patch('/emergency-access/EA0001/close').set('Authorization', `Bearer ${token}`);
+
+  test.each([
+    ['SUCCESS',       200],
+    ['ACCESS_DENIED', 403],
+    ['NOT_FOUND',     404],
+    ['FAILED',        500],
+  ])('GET: service %s -> %i', async (status, code) => {
+    const { token } = newDoctor();
+    emergencySvc.getEmergencyAccess.mockResolvedValueOnce({ status });
+    expect((await get(token)).status).toBe(code);
+  });
+
+  test.each([
+    ['SUCCESS',       200],
+    ['ACCESS_DENIED', 403],
+    ['NOT_FOUND',     404],
+    ['FAILED',        500],
+  ])('close: service %s -> %i', async (status, code) => {
+    const { token } = newDoctor();
+    emergencySvc.closeEmergencyAccess.mockResolvedValueOnce({ status });
+    expect((await close(token)).status).toBe(code);
+  });
+});

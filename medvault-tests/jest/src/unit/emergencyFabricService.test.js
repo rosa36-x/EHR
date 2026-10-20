@@ -183,3 +183,57 @@ describe('closeEmergencyAccess', () => {
     expect(ledgerUpdates()).toHaveLength(0);
   });
 });
+
+describe('getEmergencyAccess', () => {
+  const makeLog = (over = {}) => ({ emergencyAccessID: 'EA_G1', relationshipID: 'TR_G1', doctorID: DOCTOR, patientID: PATIENT, status: 'ACTIVE', ...over });
+  const evaluates = () => contract.evaluateTransaction.mock.calls.filter((c) => c[0] === 'GetEmergencyAccess');
+
+  test('no Mongo log -> NOT_FOUND, ledger never read (fails closed)', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(null);
+    const r = await svc.getEmergencyAccess('EA_G1', 'PAT_ANYONE', 'patient');
+    expect(r.status).toBe('NOT_FOUND');
+    expect(r.data).toBeUndefined();
+    expect(evaluates()).toHaveLength(0);
+  });
+
+  test('opening doctor -> SUCCESS with ledger data', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
+    const r = await svc.getEmergencyAccess('EA_G1', DOCTOR, 'doctor');
+    expect(r.status).toBe('SUCCESS');
+    expect(r.data.emergencyAccessID).toBe('EA_G1');
+  });
+
+  test('the patient it belongs to -> SUCCESS', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
+    expect((await svc.getEmergencyAccess('EA_G1', PATIENT, 'patient')).status).toBe('SUCCESS');
+  });
+
+  test.each([
+    ['another doctor',  'DOC_OTHER', 'doctor'],
+    ['another patient', 'PAT_OTHER', 'patient'],
+    ['an org actor',    'ORG_1',     'org_actor'],
+  ])('%s -> ACCESS_DENIED, ledger never read', async (_n, id, role) => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
+    const r = await svc.getEmergencyAccess('EA_G1', id, role);
+    expect(r.status).toBe('ACCESS_DENIED');
+    expect(r.data).toBeUndefined();
+    expect(evaluates()).toHaveLength(0);
+  });
+
+  test('ledger error -> FAILED with the error message', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
+    contract.evaluateTransaction.mockRejectedValueOnce(new Error('chaincode response 500'));
+    const r = await svc.getEmergencyAccess('EA_G1', DOCTOR, 'doctor');
+    expect(r.status).toBe('FAILED');
+    expect(r.message).toMatch(/chaincode response 500/);
+  });
+});
+
+describe('closeEmergencyAccess - unknown id', () => {
+  test('no log -> NOT_FOUND, nothing changes', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(null);
+    const r = await svc.closeEmergencyAccess('EA_NOPE', DOCTOR, 'doctor');
+    expect(r.status).toBe('NOT_FOUND');
+    expect(trSvc.dischargePatient).not.toHaveBeenCalled();
+  });
+});

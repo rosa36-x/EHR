@@ -1,6 +1,41 @@
 import { logAudit } from "./auditMiddleware.js";
-import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
+import { hasActiveTreatmentRelationship, getTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
 import { hasActivePermission } from "./permissionRequestFabricService.js";
+import { EmergencyAccessLog } from "./db.js";
+
+/**
+ * Break-glass check: does this doctor have an OPEN emergency episode for this
+ * patient right now? All of the following must hold:
+ *   - an EmergencyAccessLog row for (doctor, patient) that is ACTIVE and not
+ *     past its 24h expiry (closeEmergencyAccess() flips it to CLOSED), and
+ *   - the backing ASSIGNED_EMERGENCY_PHYSICIAN relationship is still ACTIVE
+ *     and unexpired on the ledger (so discharging it through the relationship
+ *     routes also ends the override, not just the explicit close).
+ * Any error fails CLOSED: no override.
+ */
+export async function hasActiveEmergencyAccess(doctorID, patientID) {
+    try {
+        const now = new Date();
+        const log = await EmergencyAccessLog.findOne({
+            doctorID,
+            patientID,
+            status:    "ACTIVE",
+            expiresAt: { $gt: now.toISOString() },
+        });
+        if (!log) return false;
+
+        const rel = await getTreatmentRelationship(log.relationshipID, doctorID, "doctor");
+        return (
+            rel.status === "SUCCESS" &&
+            rel.data.relationshipType === "ASSIGNED_EMERGENCY_PHYSICIAN" &&
+            rel.data.status === "ACTIVE" &&
+            new Date(rel.data.dormantAfter) > now
+        );
+    } catch (err) {
+        console.error("[AccessControl] emergency access check failed, denying override:", err.message);
+        return false;
+    }
+}
 
 /**
  * Access Control Service
@@ -14,6 +49,10 @@ import { hasActivePermission } from "./permissionRequestFabricService.js";
  *   1. Patients may only access their own records.
  *   2. SENSITIVE records require an explicit, patient-approved permission
  *      request (hasActivePermission) — regardless of treatment relationship.
+ *      Exception (break-glass): a doctor with an open emergency episode for
+ *      this patient (hasActiveEmergencyAccess) may read SENSITIVE records
+ *      without a permission request, for the life of that episode only. The
+ *      override is written to the audit log as EMERGENCY_OVERRIDE.
  *   3. Non-sensitive records require an active treatment relationship.
  *      Emergency access satisfies this because createEmergencyAccess()
  *      grants an ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship —
@@ -78,6 +117,10 @@ export async function canAccessRecord({
     if (sensitivityLevel === "SENSITIVE") {
         const hasPermission = await hasActivePermission(actorID, resourceID);
         if (!hasPermission) {
+            if (await hasActiveEmergencyAccess(actorID, patientID)) {
+                await logAudit({ actorID, actorRole, action: "EMERGENCY_OVERRIDE", resourceType, resourceID });
+                return { allowed: true, emergencyOverride: true };
+            }
             await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType, resourceID });
             return {
                 allowed: false,

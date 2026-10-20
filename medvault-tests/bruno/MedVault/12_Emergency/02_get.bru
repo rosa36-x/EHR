@@ -16,7 +16,7 @@ auth:bearer {
 
 tests {
   test("status 200", function() {
-    expect(res.status).to.equal(200);
+    expect(res.status, JSON.stringify(res.body)).to.equal(200);
   });
   test("SUCCESS status", function() {
     expect(res.body.status).to.equal("SUCCESS");

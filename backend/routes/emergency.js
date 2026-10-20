@@ -64,7 +64,10 @@ router.post("/", authenticate, authorizeRoles("doctor"), emergencyLimiter, async
  */
 router.get("/:id", authenticate, async (req, res) => {
     const result = await svc.getEmergencyAccess(req.params.id, req.user.id, req.user.role);
-    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    const statusCode = result.status === "SUCCESS" ? 200
+        : result.status === "ACCESS_DENIED" ? 403
+        : result.status === "NOT_FOUND" ? 404
+        : 500;
     return res.status(statusCode).json(result);
 });
 
@@ -75,7 +78,10 @@ router.get("/:id", authenticate, async (req, res) => {
  */
 router.patch("/:id/close", authenticate, authorizeRoles("doctor"), async (req, res) => {
     const result = await svc.closeEmergencyAccess(req.params.id, req.user.id, req.user.role);
-    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    const statusCode = result.status === "SUCCESS" ? 200
+        : result.status === "ACCESS_DENIED" ? 403
+        : result.status === "NOT_FOUND" ? 404
+        : 500;
     return res.status(statusCode).json(result);
 });
 

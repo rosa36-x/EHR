@@ -42,6 +42,7 @@ func (s *SmartContract) CreateEmergencyAccess(
 		Reason:            reason,
 		Status:            status,
 		Timestamp:         timestamp,
+		UpdatedAt:         timestamp,
 	}
 
 	emergencyJSON, err := json.Marshal(emergency)

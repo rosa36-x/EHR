@@ -1,0 +1,32 @@
+meta {
+  name: Break-glass - Read Sensitive Lab Report During Emergency
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/labreports/{{sensitive_lab_report_id}}?org=hospital
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  // sensitive_lab_report_id is the HIV_TEST report from 08_LabReport/02 (SENSITIVE).
+  // No permission request exists for it, so outside an emergency this read is a 403
+  // with requiresPermission. 01_create opened an emergency episode for
+  // {{doctor_id}} + {{patient_id}}, so the break-glass override lets it through.
+  test("status 200 (no permission request needed during an open emergency)", function() {
+    expect(res.status, JSON.stringify(res.body)).to.equal(200);
+  });
+  test("SUCCESS status", function() {
+    expect(res.body.status).to.equal("SUCCESS");
+  });
+  test("record is the SENSITIVE one", function() {
+    expect(res.body.data.sensitivityLevel).to.equal("SENSITIVE");
+    expect(res.body.data.reportType).to.equal("HIV_TEST");
+  });
+}

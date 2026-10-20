@@ -4,9 +4,11 @@ import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
-import { canAccessRecord } from "./accessControlService.js";
+import { canAccessRecord, hasActiveEmergencyAccess } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
+import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
+import { hasActivePermission } from "./permissionRequestFabricService.js";
 
 export async function createPrescription(data, fileBuffer, actorID, actorRole = "doctor", actorOrg = "HospitalMSP") {
     let gateway, client;
@@ -149,9 +151,17 @@ export async function getPrescriptionsByPatient(patientID, actorID, actorRole) {
 
         const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
         const visible = [];
+        // Break-glass: looked up at most once per list, and only if a
+        // sensitive item is actually present.
+        let emergency;
         for (const p of all) {
             if (p.sensitivityLevel === "SENSITIVE") {
-                if (await hasActivePermission(actorID, p.prescriptionID)) visible.push(p);
+                if (await hasActivePermission(actorID, p.prescriptionID)) {
+                    visible.push(p);
+                    continue;
+                }
+                if (emergency === undefined) emergency = await hasActiveEmergencyAccess(actorID, patientID);
+                if (emergency) visible.push(p);
             } else if (hasRelationship) {
                 visible.push(p);
             }

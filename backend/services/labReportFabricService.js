@@ -4,7 +4,7 @@ import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
-import { canAccessRecord } from "./accessControlService.js";
+import { canAccessRecord, hasActiveEmergencyAccess } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth } from "./db.js";
 import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
@@ -143,9 +143,17 @@ export async function getLabReportsByPatient(patientID, actorID, actorRole) {
 
         const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
         const visible = [];
+        // Break-glass: looked up at most once per list, and only if a
+        // sensitive item is actually present.
+        let emergency;
         for (const l of all) {
             if (l.sensitivityLevel === "SENSITIVE") {
-                if (await hasActivePermission(actorID, l.reportID)) visible.push(l);
+                if (await hasActivePermission(actorID, l.reportID)) {
+                    visible.push(l);
+                    continue;
+                }
+                if (emergency === undefined) emergency = await hasActiveEmergencyAccess(actorID, patientID);
+                if (emergency) visible.push(l);
             } else if (hasRelationship) {
                 visible.push(l);
             }

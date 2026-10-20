@@ -92,6 +92,7 @@ const otpSchema = new mongoose.Schema({
     phone:      { type: String, required: true },
     otp:        { type: String, required: true },
     role:       { type: String, enum: ["doctor", "patient"], required: true },
+    attempts:   { type: Number, default: 0 }, // wrong-guess counter, see authService.checkOTP
     createdAt:  { type: Date, default: Date.now, expires: 300 }, // 5 min TTL
 });
 

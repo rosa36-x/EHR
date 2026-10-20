@@ -174,15 +174,18 @@ export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) 
     try {
         // Same ownership rule as closeEmergencyAccess: only the patient the
         // episode belongs to, or the doctor who opened it, may read it.
+        // Fails closed: every episode has a Mongo log (createEmergencyAccess
+        // aborts otherwise), so no log means nobody can be verified as owner.
         const log = await EmergencyAccessLog.findOne({ emergencyAccessID });
-        if (log) {
-            const isOwner =
-                (actorRole === "patient" && actorID === log.patientID) ||
-                (actorRole === "doctor"  && actorID === log.doctorID);
-            if (!isOwner) {
-                await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
-                return { status: "ACCESS_DENIED", message: "You do not have permission to view this emergency access record." };
-            }
+        if (!log) {
+            return { status: "NOT_FOUND", message: `Emergency access ${emergencyAccessID} not found.` };
+        }
+        const isOwner =
+            (actorRole === "patient" && actorID === log.patientID) ||
+            (actorRole === "doctor"  && actorID === log.doctorID);
+        if (!isOwner) {
+            await logAudit({ actorID, actorRole, action: "ACCESS_DENIED", resourceType: "EMERGENCY_ACCESS", resourceID: emergencyAccessID });
+            return { status: "ACCESS_DENIED", message: "You do not have permission to view this emergency access record." };
         }
 
         const result = await getContract("hospital");
@@ -197,6 +200,7 @@ export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) 
 
         return { status: "SUCCESS", data };
     } catch (err) {
+        console.error("[EmergencyAccess] getEmergencyAccess failed:", err);
         return { status: "FAILED", message: err.message };
     } finally {
         if (gateway) await gateway.close();
@@ -224,7 +228,7 @@ export async function closeEmergencyAccess(emergencyAccessID, actorID, actorRole
     try {
         const log = await EmergencyAccessLog.findOne({ emergencyAccessID });
         if (!log) {
-            return { status: "FAILED", message: `No emergency access log found for ${emergencyAccessID}.` };
+            return { status: "NOT_FOUND", message: `No emergency access log found for ${emergencyAccessID}.` };
         }
 
         if (log.status === "CLOSED") {
