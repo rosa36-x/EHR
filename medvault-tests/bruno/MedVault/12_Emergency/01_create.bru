@@ -24,8 +24,8 @@ body:json {
 }
 
 tests {
-  // NOTE: emergencyAccessID in body is ignored — service auto-generates via generateID("emergency").
-  // The body field is vestigial; the route passes it through but the service overrides it.
+  // NOTE: emergencyAccessID, doctorID and status in the body are ignored -- the route only
+  // forwards patientID and reason; the ID is generated server-side and doctorID comes from the JWT.
   test("status 200", function() {
     expect(res.status).to.equal(200);
   });

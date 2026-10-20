@@ -32,7 +32,7 @@ class CreateTreatmentRelationshipWorkload extends WorkloadModuleBase {
                 doctorID,
                 'ONGOING_CARE',
                 'Caliper benchmark transaction',
-                'ACTIVE',
+                'PENDING',
                 new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // dormantAfter: +30d
                 now,
                 now,

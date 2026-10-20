@@ -15,6 +15,11 @@ const EMERGENCY_ACCESS_SAFETY_NET_HOURS = 24;
 export async function createEmergencyAccess(data, actorID) {
     let gateway, client;
     try {
+        const patientRecord = await PatientAuth.findOne({ patientID: data.patientID });
+        if (!patientRecord) {
+            return { status: "NOT_FOUND", message: `Patient ${data.patientID} not found.` };
+        }
+
         // Prevent redundant emergency-access episodes: if this doctor already
         // has an active, unexpired ASSIGNED_EMERGENCY_PHYSICIAN relationship
         // for this patient, don't create a duplicate ledger entry + relationship.
@@ -46,7 +51,7 @@ export async function createEmergencyAccess(data, actorID) {
             data.patientID,
             data.doctorID,
             data.reason,
-            data.status ?? "ACTIVE",
+            "ACTIVE",
             timestamp
         );
 
@@ -92,19 +97,27 @@ export async function createEmergencyAccess(data, actorID) {
         // (only Create/Get — see chaincode/emergency_contract.go), so this
         // Mongo-side log is the source of truth for "is this episode still
         // open" until that chaincode function exists.
-        await EmergencyAccessLog.create({
-            emergencyAccessID,
-            relationshipID: relationshipResult.relationshipID,
-            doctorID:       data.doctorID,
-            patientID:      data.patientID,
-            reason:         data.reason,
-            status:         "ACTIVE",
-            expiresAt:      relationshipResult.dormantAfter,
-            createdAt:      timestamp,
-        });
+        try {
+            await EmergencyAccessLog.create({
+                emergencyAccessID,
+                relationshipID: relationshipResult.relationshipID,
+                doctorID:       data.doctorID,
+                patientID:      data.patientID,
+                reason:         data.reason,
+                status:         "ACTIVE",
+                expiresAt:      relationshipResult.dormantAfter,
+                createdAt:      timestamp,
+            });
+        } catch (logErr) {
+            // Without a log, closeEmergencyAccess() could never find this
+            // relationship, so revoke it now rather than leave it open.
+            console.error("[EmergencyAccess] Failed to write EmergencyAccessLog, revoking relationship:", logErr.message);
+            await dischargePatient(relationshipResult.relationshipID, data.doctorID, true);
+            return { status: "FAILED", message: "Failed to record emergency access." };
+        }
 
         // Notify patient of emergency access
-        const patient = await PatientAuth.findOne({ patientID: data.patientID });
+        const patient = patientRecord;
         const doctor  = await Doctor.findOne({ doctorID: data.doctorID });
         if (patient && doctor) {
             await notify({

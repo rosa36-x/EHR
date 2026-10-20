@@ -1,32 +1,61 @@
 import express from "express";
 import * as svc from "../services/emergencyFabricService.js";
+import rateLimit from "express-rate-limit";
 import { authenticate, authorizeRoles } from "../services/authMiddleware.js";
 
 const router = express.Router();
 
+const REASON_MIN_LENGTH = 10;
+const REASON_MAX_LENGTH = 1000;
+
+// Break-glass grants 24h of access per call, so cap how many a single doctor
+// can open per hour. Counted per doctor, not per IP. Tunable via env.
+const emergencyLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: Number(process.env.EMERGENCY_RATE_LIMIT_MAX) || 10,
+    keyGenerator: (req) => req.user.id,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req, res) => res.status(429).json({
+        status: "FAILED",
+        message: "Too many emergency access requests. Try again later.",
+    }),
+});
+
 /**
  * POST /emergency-access
- * Body: { emergencyAccessID, patientID, doctorID, reason }
- * EmergencyAccessID format: EA0001
+ * Body: { patientID, reason }
+ * The caller's identity comes from the JWT; any doctorID, status or
+ * emergencyAccessID in the body is ignored.
  */
-router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
-    const { emergencyAccessID, patientID, doctorID, reason } = req.body;
+router.post("/", authenticate, authorizeRoles("doctor"), emergencyLimiter, async (req, res) => {
+    const { patientID, reason } = req.body ?? {};
 
-    if (!emergencyAccessID || !patientID || !doctorID || !reason) {
+    // typeof checks also stop objects like { "$ne": null } reaching Mongo queries.
+    if (typeof patientID !== "string" || !patientID.trim() || typeof reason !== "string") {
         return res.status(400).json({
             status: "FAILED",
-            message: "emergencyAccessID, patientID, doctorID, reason are required.",
+            message: "patientID and reason are required and must be strings.",
         });
     }
 
-    // A doctor can only open emergency access under their own identity — the
-    // body's doctorID is ignored so nobody can name a different doctor as
-    // the one gaining access. req.user.id is the source of truth.
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < REASON_MIN_LENGTH || trimmedReason.length > REASON_MAX_LENGTH) {
+        return res.status(400).json({
+            status: "FAILED",
+            message: `reason must be between ${REASON_MIN_LENGTH} and ${REASON_MAX_LENGTH} characters.`,
+        });
+    }
+
     const result = await svc.createEmergencyAccess(
-        { ...req.body, doctorID: req.user.id },
+        { patientID: patientID.trim(), doctorID: req.user.id, reason: trimmedReason },
         req.user.id
     );
-    const statusCode = result.status === "SUCCESS" ? 200 : result.message?.includes("already have active") ? 409 : 500;
+    const statusCode =
+        result.status === "SUCCESS" ? 200
+        : result.status === "NOT_FOUND" ? 404
+        : result.message?.includes("already have active") ? 409
+        : 500;
     return res.status(statusCode).json(result);
 });
 

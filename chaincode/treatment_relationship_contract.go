@@ -87,10 +87,14 @@ func (s *SmartContract) CreateTreatmentRelationship(
 		return fmt.Errorf("treatment relationship %s already exists", relationshipID)
 	}
 
-	// A relationship is born ACTIVE (system-created, e.g. emergency) or
-	// PENDING (awaiting patient approval); nothing else is a valid start state.
-	if status != "ACTIVE" && status != "PENDING" {
-		return fmt.Errorf("status on create must be ACTIVE or PENDING, got %q", status)
+	// Only an emergency relationship may be created ACTIVE. Every other type
+	// must start PENDING and become ACTIVE through patient approval.
+	if relationshipType == "ASSIGNED_EMERGENCY_PHYSICIAN" {
+		if status != "ACTIVE" {
+			return fmt.Errorf("emergency relationships must be created ACTIVE, got %q", status)
+		}
+	} else if status != "PENDING" {
+		return fmt.Errorf("relationships must be created PENDING until the patient approves, got %q", status)
 	}
 
 	if _, perr := time.Parse(time.RFC3339, dormantAfter); perr != nil {

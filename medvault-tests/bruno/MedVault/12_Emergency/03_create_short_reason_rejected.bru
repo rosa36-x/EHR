@@ -1,0 +1,31 @@
+meta {
+  name: Create Emergency Access - Reason Too Short
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/emergency-access
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "{{patient_id}}",
+    "reason": "urgent"
+  }
+}
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+}
