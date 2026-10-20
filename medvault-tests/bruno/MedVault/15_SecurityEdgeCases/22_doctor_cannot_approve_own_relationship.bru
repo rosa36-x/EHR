@@ -1,0 +1,25 @@
+meta {
+  name: Security - Doctor Cannot Self-Approve Treatment Relationship
+  type: http
+  seq: 22
+}
+
+patch {
+  url: {{base_url}}/treatment-relationships/{{treatment_relationship_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("role check rejects the doctor", function() {
+    expect(res.body.status).to.equal("FAILED");
+    expect(res.body.message).to.include("patient");
+  });
+}

@@ -78,6 +78,12 @@ const NotificationEvents = {
   EMERGENCY_ACCESS: (doctorName, reason) =>
     `Emergency access to your records was granted to Dr. ${doctorName}. Reason: ${reason}.`,
 
+  TREATMENT_RELATIONSHIP_REQUEST: (doctorName, relationshipType) =>
+    `Dr. ${doctorName} has asked to be added as your treating doctor (${relationshipType}). They cannot access your records until you approve. Approve or reject it in your MedVault portal.`,
+
+  TREATMENT_RELATIONSHIP_RENEWAL_REQUEST: (doctorName) =>
+    `Dr. ${doctorName} has asked to resume their treatment relationship with you. They cannot access your records again until you approve. Approve or reject it in your MedVault portal.`,
+
   TREATMENT_RELATIONSHIP_ENDED: (doctorName) =>
     `Your treatment relationship with Dr. ${doctorName} has ended. Their access to your records has been revoked.`,
 };

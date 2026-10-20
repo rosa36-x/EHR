@@ -76,7 +76,7 @@ export async function createEmergencyAccess(data, actorID) {
             relationshipType: "ASSIGNED_EMERGENCY_PHYSICIAN",
             notes: `Emergency access ${emergencyAccessID}: ${data.reason}`,
             dormantAfterHours: EMERGENCY_ACCESS_SAFETY_NET_HOURS,
-        });
+        }, { requirePatientApproval: false });
 
         if (relationshipResult.status !== "SUCCESS") {
             console.error(

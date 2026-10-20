@@ -4,7 +4,8 @@
  * Domain-level mock matching the real treatmentRelationshipFabricService.js
  * exports exactly: TreatmentRelationshipTypes, createTreatmentRelationship,
  * getTreatmentRelationship, hasActiveTreatmentRelationship, dischargePatient,
- * markDormant, reactivateTreatmentRelationship.
+ * markDormant, reactivateTreatmentRelationship, approveTreatmentRelationship,
+ * rejectTreatmentRelationship.
  *
  * Note the real export is `reactivateTreatmentRelationship`, not `reactivate`.
  */
@@ -37,10 +38,15 @@ const markDormant = jest.fn(async (relationshipID) => SUCCESS({ relationshipID }
 
 const reactivateTreatmentRelationship = jest.fn(async (relationshipID) => SUCCESS({ relationshipID }));
 
+const approveTreatmentRelationship = jest.fn(async (relationshipID) => SUCCESS({ relationshipID, relationshipStatus: 'ACTIVE' }));
+
+const rejectTreatmentRelationship = jest.fn(async (relationshipID) => SUCCESS({ relationshipID, relationshipStatus: 'DISCHARGED' }));
+
 const __resetAll = () => {
   [
     createTreatmentRelationship, getTreatmentRelationship, hasActiveTreatmentRelationship,
     dischargePatient, markDormant, reactivateTreatmentRelationship,
+    approveTreatmentRelationship, rejectTreatmentRelationship,
   ].forEach((fn) => fn.mockClear());
   _seq = 1;
 };
@@ -53,5 +59,7 @@ module.exports = {
   dischargePatient,
   markDormant,
   reactivateTreatmentRelationship,
+  approveTreatmentRelationship,
+  rejectTreatmentRelationship,
   __resetAll,
 };

@@ -6,7 +6,10 @@ const router = express.Router();
 
 /**
  * POST /treatment-relationships
- * Create a treatment relationship between a doctor and patient.
+ * Doctor requests a treatment relationship with a patient. It is created
+ * PENDING and grants no access until the patient approves it (PATCH
+ * /:id/approve). ASSIGNED_EMERGENCY_PHYSICIAN is rejected here (403): it can
+ * only be created through POST /emergency-access.
  * Body: { patientID, relationshipType, notes? }
  */
 router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
@@ -26,7 +29,29 @@ router.post("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
         notes,
     });
 
-    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
+});
+
+/**
+ * PATCH /treatment-relationships/:id/approve
+ * Patient approves a PENDING relationship (new, or a renewal request).
+ * Until then the doctor has no access.
+ */
+router.patch("/:id/approve", authenticate, authorizeRoles("patient"), async (req, res) => {
+    const result = await svc.approveTreatmentRelationship(req.params.id, req.user.id);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
+});
+
+/**
+ * PATCH /treatment-relationships/:id/reject
+ * Patient rejects a PENDING relationship (it is discharged, terminal).
+ */
+router.patch("/:id/reject", authenticate, authorizeRoles("patient"), async (req, res) => {
+    const result = await svc.rejectTreatmentRelationship(req.params.id, req.user.id);
+    const statusCode = result.status === "SUCCESS" ? 200 : result.status === "ACCESS_DENIED" ? 403 : 500;
+    return res.status(statusCode).json(result);
 });
 
 /**
@@ -60,7 +85,8 @@ router.patch("/:id/dormant", authenticate, authorizeRoles("doctor"), async (req,
 
 /**
  * PATCH /treatment-relationships/:id/reactivate
- * Reactivate a dormant relationship (new appointment scheduled).
+ * Doctor asks to resume a dormant/expired relationship. Sets it PENDING;
+ * the patient must approve before access resumes.
  */
 router.patch("/:id/reactivate", authenticate, authorizeRoles("doctor"), async (req, res) => {
     const result = await svc.reactivateTreatmentRelationship(req.params.id, req.user.id);
