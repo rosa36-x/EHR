@@ -12,6 +12,36 @@ import { createTreatmentRelationship, dischargePatient } from "./treatmentRelati
 // should normally end an emergency episode well before this fires.
 const EMERGENCY_ACCESS_SAFETY_NET_HOURS = 24;
 
+// Moves the on-chain EmergencyAccess record out of ACTIVE (CLOSED or ABORTED).
+// Best-effort: callers have already dealt with the actual access, so a ledger
+// hiccup here is logged and never turns a revoked access back into an error.
+// Pass an open contract to reuse its connection, otherwise one is opened.
+async function markLedgerEmergencyStatus(emergencyAccessID, status, existingContract) {
+    let gateway, client;
+    try {
+        let contract = existingContract;
+        if (!contract) {
+            const result = await getContract("hospital");
+            gateway  = result.gateway;
+            client   = result.client;
+            contract = result.contract;
+        }
+        await contract.submitTransaction(
+            "UpdateEmergencyAccessStatus",
+            emergencyAccessID,
+            status,
+            new Date().toISOString()
+        );
+        return true;
+    } catch (err) {
+        console.error(`[EmergencyAccess] Failed to mark ledger record ${emergencyAccessID} ${status}:`, err.message);
+        return false;
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
+
 export async function createEmergencyAccess(data, actorID) {
     let gateway, client;
     try {
@@ -88,15 +118,14 @@ export async function createEmergencyAccess(data, actorID) {
                 "[EmergencyAccess] Failed to create backing treatment relationship:",
                 relationshipResult.message
             );
+            await markLedgerEmergencyStatus(emergencyAccessID, "ABORTED", contract);
             return { status: "FAILED", message: "Failed to grant emergency access relationship." };
         }
 
         // Track the emergencyAccessID <-> relationshipID link and expiry so
-        // closeEmergencyAccess() knows what to revoke. The Fabric ledger's
-        // EmergencyAccess record has no status-update transaction today
-        // (only Create/Get — see chaincode/emergency_contract.go), so this
-        // Mongo-side log is the source of truth for "is this episode still
-        // open" until that chaincode function exists.
+        // closeEmergencyAccess() knows what to revoke. The ledger record's
+        // status mirrors this (ACTIVE -> CLOSED/ABORTED), but this Mongo log
+        // is what the close flow and the duplicate check read.
         try {
             await EmergencyAccessLog.create({
                 emergencyAccessID,
@@ -113,6 +142,7 @@ export async function createEmergencyAccess(data, actorID) {
             // relationship, so revoke it now rather than leave it open.
             console.error("[EmergencyAccess] Failed to write EmergencyAccessLog, revoking relationship:", logErr.message);
             await dischargePatient(relationshipResult.relationshipID, data.doctorID, true);
+            await markLedgerEmergencyStatus(emergencyAccessID, "ABORTED", contract);
             return { status: "FAILED", message: "Failed to record emergency access." };
         }
 
@@ -182,10 +212,9 @@ export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) 
  * Revokes the doctor's actual access immediately by discharging the backing
  * ASSIGNED_EMERGENCY_PHYSICIAN treatment relationship (this is the part that
  * matters for security — CheckActiveTreatmentRelationship will return false
- * for it right away). The Fabric EmergencyAccess ledger record itself keeps
- * saying ACTIVE, since there's no chaincode function to update its status
- * yet — this Mongo log's `status` field is the source of truth for that
- * until one exists.
+ * for it right away). It then marks the on-chain EmergencyAccess record
+ * CLOSED (best-effort, via UpdateEmergencyAccessStatus) so the ledger no
+ * longer shows the episode as ACTIVE.
  *
  * Only the doctor who opened the emergency access (or, in the future, some
  * hospital-admin role) should be able to close it — enforced by the caller
@@ -214,6 +243,8 @@ export async function closeEmergencyAccess(emergencyAccessID, actorID, actorRole
             console.error("[EmergencyAccess] Failed to discharge backing relationship on close:", dischargeResult.message);
             return { status: "FAILED", message: "Failed to revoke the underlying access relationship." };
         }
+
+        await markLedgerEmergencyStatus(emergencyAccessID, "CLOSED");
 
         const closedAt = new Date().toISOString();
         log.status   = "CLOSED";

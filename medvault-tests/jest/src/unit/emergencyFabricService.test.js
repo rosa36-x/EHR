@@ -9,6 +9,8 @@
  *     ({ requirePatientApproval: false })
  *   - a failed EmergencyAccessLog write revokes the relationship instead of
  *     leaving an access nobody can close
+ *   - an episode that fails to set up is marked ABORTED on the ledger, and
+ *     closing one marks it CLOSED (best-effort, never fails the request)
  */
 
 'use strict';
@@ -38,6 +40,8 @@ const DOCTOR  = 'DOC_E1';
 const PATIENT = 'PAT_E1';
 const REASON  = 'Patient unconscious, needs immediate treatment';
 const input   = { patientID: PATIENT, doctorID: DOCTOR, reason: REASON };
+const ledgerUpdates = () =>
+  contract.submitTransaction.mock.calls.filter((c) => c[0] === 'UpdateEmergencyAccessStatus');
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -95,6 +99,8 @@ describe('createEmergencyAccess', () => {
     expect(r.status).toBe('FAILED');
     expect(db.EmergencyAccessLog.create).not.toHaveBeenCalled();
     expect(trSvc.dischargePatient).not.toHaveBeenCalled();
+    expect(ledgerUpdates()).toHaveLength(1);
+    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_UNIT_0001', 'ABORTED']);
   });
 
   test('log write fails -> relationship is discharged, FAILED, no patient SMS', async () => {
@@ -103,5 +109,77 @@ describe('createEmergencyAccess', () => {
     expect(r.status).toBe('FAILED');
     expect(trSvc.dischargePatient).toHaveBeenCalledWith('TR_E1', DOCTOR, true);
     expect(notif.notify).not.toHaveBeenCalled();
+    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_UNIT_0001', 'ABORTED']);
+  });
+
+  test('success never touches the ledger status', async () => {
+    await svc.createEmergencyAccess(input, DOCTOR);
+    expect(ledgerUpdates()).toHaveLength(0);
+  });
+
+  test('ledger ABORTED update failing does not change the FAILED result', async () => {
+    trSvc.createTreatmentRelationship.mockResolvedValue({ status: 'FAILED', message: 'boom' });
+    contract.submitTransaction.mockImplementation(async (fn) => {
+      if (fn === 'UpdateEmergencyAccessStatus') throw new Error('ledger down');
+      return Buffer.from('');
+    });
+    const r = await svc.createEmergencyAccess(input, DOCTOR);
+    expect(r.status).toBe('FAILED');
+    expect(r.message).toBe('Failed to grant emergency access relationship.');
+  });
+});
+
+describe('closeEmergencyAccess', () => {
+  const makeLog = (over = {}) => ({
+    emergencyAccessID: 'EA_C1', relationshipID: 'TR_C1', doctorID: DOCTOR, patientID: PATIENT,
+    status: 'ACTIVE', save: jest.fn().mockResolvedValue(undefined), ...over,
+  });
+
+  test('success: relationship discharged, ledger marked CLOSED, log saved', async () => {
+    const log = makeLog();
+    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
+    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
+    expect(r.status).toBe('SUCCESS');
+    expect(trSvc.dischargePatient).toHaveBeenCalledWith('TR_C1', DOCTOR, true);
+    expect(ledgerUpdates()).toHaveLength(1);
+    expect(ledgerUpdates()[0].slice(1, 3)).toEqual(['EA_C1', 'CLOSED']);
+    expect(log.status).toBe('CLOSED');
+    expect(log.save).toHaveBeenCalled();
+  });
+
+  test('ledger CLOSED update failing still closes the episode', async () => {
+    const log = makeLog();
+    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
+    contract.submitTransaction.mockImplementation(async () => { throw new Error('ledger down'); });
+    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
+    expect(r.status).toBe('SUCCESS');
+    expect(log.status).toBe('CLOSED');
+    expect(log.save).toHaveBeenCalled();
+  });
+
+  test('discharge failure -> FAILED, ledger untouched, log stays ACTIVE', async () => {
+    const log = makeLog();
+    db.EmergencyAccessLog.findOne.mockResolvedValue(log);
+    trSvc.dischargePatient.mockResolvedValue({ status: 'FAILED', message: 'nope' });
+    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
+    expect(r.status).toBe('FAILED');
+    expect(ledgerUpdates()).toHaveLength(0);
+    expect(log.status).toBe('ACTIVE');
+  });
+
+  test('another doctor -> ACCESS_DENIED, nothing changes', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog());
+    const r = await svc.closeEmergencyAccess('EA_C1', 'DOC_OTHER', 'doctor');
+    expect(r.status).toBe('ACCESS_DENIED');
+    expect(trSvc.dischargePatient).not.toHaveBeenCalled();
+    expect(ledgerUpdates()).toHaveLength(0);
+  });
+
+  test('already closed -> FAILED, nothing changes', async () => {
+    db.EmergencyAccessLog.findOne.mockResolvedValue(makeLog({ status: 'CLOSED' }));
+    const r = await svc.closeEmergencyAccess('EA_C1', DOCTOR, 'doctor');
+    expect(r.status).toBe('FAILED');
+    expect(trSvc.dischargePatient).not.toHaveBeenCalled();
+    expect(ledgerUpdates()).toHaveLength(0);
   });
 });

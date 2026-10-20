@@ -7,4 +7,5 @@ type EmergencyAccess struct {
 	Reason            string `json:"reason"`
 	Status            string `json:"status"`
 	Timestamp         string `json:"timestamp"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
 }
