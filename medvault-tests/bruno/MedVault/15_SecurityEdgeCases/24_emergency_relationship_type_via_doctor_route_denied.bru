@@ -1,0 +1,32 @@
+meta {
+  name: Security - Emergency Relationship Type Not Creatable Via Doctor Route
+  type: http
+  seq: 24
+}
+
+post {
+  url: {{base_url}}/treatment-relationships
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "{{patient_id}}",
+    "relationshipType": "ASSIGNED_EMERGENCY_PHYSICIAN",
+    "notes": "Attempt to mint an emergency relationship without EmergencyAccess"
+  }
+}
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

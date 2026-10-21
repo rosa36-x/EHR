@@ -7,7 +7,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-     "db:reset": "node reset-test-db.js"
+     "db:reset": "node reset-test-db.js",
+    "kms:migrate": "node scripts/migrateKmsStore.js",
+    "kms:rotate-kek": "node scripts/rotateKmsKek.js"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +22,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "helia": "^6.1.4",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.3",

@@ -20,7 +20,7 @@ type TreatmentRelationship struct {
 	DoctorID         string `json:"doctorID"`
 	RelationshipType string `json:"relationshipType"` // RECENT_APPOINTMENT | FOLLOW_UP_CHECKUP | ONGOING_TREATMENT | REFERRED_BY_DOCTOR | ASSIGNED_EMERGENCY_PHYSICIAN
 	Notes            string `json:"notes"`
-	Status           string `json:"status"`       // ACTIVE | DORMANT | DISCHARGED
+	Status           string `json:"status"`       // PENDING | ACTIVE | DORMANT | DISCHARGED
 	DormantAfter     string `json:"dormantAfter"` // auto-dormant if no activity after this date
 	CreatedAt        string `json:"createdAt"`
 	UpdatedAt        string `json:"updatedAt"`

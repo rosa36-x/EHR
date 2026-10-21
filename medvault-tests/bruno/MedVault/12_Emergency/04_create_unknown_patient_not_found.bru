@@ -1,0 +1,31 @@
+meta {
+  name: Create Emergency Access - Unknown Patient
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/emergency-access
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{doctor_token}}
+}
+
+body:json {
+  {
+    "patientID": "PAT_DOES_NOT_EXIST",
+    "reason": "Patient brought in unconscious, emergency surgery required"
+  }
+}
+
+tests {
+  test("status 404", function() {
+    expect(res.status).to.equal(404);
+  });
+  test("NOT_FOUND status", function() {
+    expect(res.body.status).to.equal("NOT_FOUND");
+  });
+}

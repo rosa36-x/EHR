@@ -44,6 +44,7 @@ var PolicyRegistry = map[string][]string{
 	// ── Emergency Access ──────────────────────────────────────────────────────
 	"CREATE_EMERGENCY_ACCESS": {"HospitalMSP"},
 	"GET_EMERGENCY_ACCESS":    {"HospitalMSP"},
+	"UPDATE_EMERGENCY_ACCESS": {"HospitalMSP"},
 
 	// ── Permission Request ────────────────────────────────────────────────────
 	"CREATE_PERMISSION_REQUEST":  {"HospitalMSP"},

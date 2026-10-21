@@ -4,7 +4,7 @@ import { encryptDocument, decryptDocument } from "./kmsService.js";
 import { uploadFile, getFile } from "./ipfsService.js";
 import { logAudit } from "./auditMiddleware.js";
 import { getSensitivityLevel, isValidRecordType } from "./sensitivityService.js";
-import { canAccessRecord } from "./accessControlService.js";
+import { canAccessRecord, hasActiveEmergencyAccess } from "./accessControlService.js";
 import { notify, NotificationEvents } from "./notificationService.js";
 import { PatientAuth, Doctor } from "./db.js";
 import { hasActiveTreatmentRelationship } from "./treatmentRelationshipFabricService.js";
@@ -158,7 +158,7 @@ export async function getConsultationDocument(consultationID, actorID, actorRole
         }
 
         const encryptedBuffer = await getFile(consultationCID);
-        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef, { actorID, actorRole, resourceID: consultationID });
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSULTATION", resourceID: consultationID });
 
@@ -194,9 +194,17 @@ export async function getConsultationsByPatient(patientID, actorID, actorRole) {
         // every item that merely appeared in a list scan.
         const hasRelationship = await hasActiveTreatmentRelationship(actorID, patientID);
         const visible = [];
+        // Break-glass: looked up at most once per list, and only if a
+        // sensitive item is actually present.
+        let emergency;
         for (const c of all) {
             if (c.sensitivityLevel === "SENSITIVE") {
-                if (await hasActivePermission(actorID, c.consultationID)) visible.push(c);
+                if (await hasActivePermission(actorID, c.consultationID)) {
+                    visible.push(c);
+                    continue;
+                }
+                if (emergency === undefined) emergency = await hasActiveEmergencyAccess(actorID, patientID);
+                if (emergency) visible.push(c);
             } else if (hasRelationship) {
                 visible.push(c);
             }

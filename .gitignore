@@ -200,3 +200,4 @@ medvault-frontend/src/lib/session.ts:Zone.Identifier
 medvault-frontend/src/routes/auth.doctor.tsx:Zone.Identifier
 medvault-frontend/src/routes/auth.org-actor.tsx:Zone.Identifier
 medvault-frontend/src/routes/auth.patient.tsx:Zone.Identifier
+chaincode-src/

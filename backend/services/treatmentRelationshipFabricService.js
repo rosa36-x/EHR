@@ -32,8 +32,18 @@ export const TreatmentRelationshipTypes = [
 
 /**
  * Create a treatment relationship between a doctor and patient.
+ *
+ * By default (requirePatientApproval = true, which is what the doctor-facing
+ * route uses) the relationship is created PENDING and grants nothing until
+ * the patient approves it via approveTreatmentRelationship(). The doctor
+ * cannot attest to their own clinical relationship.
+ *
+ * emergencyFabricService.js is the only caller that passes
+ * { requirePatientApproval: false }: an emergency episode is ACTIVE
+ * immediately (the patient may be unconscious) and is notified + time-boxed
+ * there. ASSIGNED_EMERGENCY_PHYSICIAN can be created no other way.
  */
-export async function createTreatmentRelationship(data) {
+export async function createTreatmentRelationship(data, { requirePatientApproval = true } = {}) {
     let gateway, client;
     try {
         if (!TreatmentRelationshipTypes.includes(data.relationshipType)) {
@@ -42,6 +52,20 @@ export async function createTreatmentRelationship(data) {
                 message: `Invalid relationshipType. Must be one of: ${TreatmentRelationshipTypes.join(", ")}`,
             };
         }
+
+        if (requirePatientApproval) {
+            if (data.relationshipType === "ASSIGNED_EMERGENCY_PHYSICIAN") {
+                return {
+                    status: "ACCESS_DENIED",
+                    message: "ASSIGNED_EMERGENCY_PHYSICIAN relationships can only be created through emergency access.",
+                };
+            }
+            const patientExists = await PatientAuth.findOne({ patientID: data.patientID });
+            if (!patientExists) {
+                return { status: "FAILED", message: "Patient not found." };
+            }
+        }
+        const initialStatus = requirePatientApproval ? "PENDING" : "ACTIVE";
 
         const relationshipID = generateID("treatmentRelationship");
         const now            = new Date();
@@ -64,13 +88,34 @@ export async function createTreatmentRelationship(data) {
             data.doctorID,
             data.relationshipType,
             data.notes ?? "",
-            "ACTIVE",
+            initialStatus,
             dormantAfter,
             timestamp,
             timestamp
         );
 
-        return { status: "SUCCESS", relationshipID, dormantAfter };
+        if (requirePatientApproval) {
+            const patient = await PatientAuth.findOne({ patientID: data.patientID });
+            const doctor  = await Doctor.findOne({ doctorID: data.doctorID });
+            if (patient && doctor) {
+                await notify({
+                    recipientID:   data.patientID,
+                    recipientRole: "patient",
+                    phone:         patient.phone,
+                    event:         "TREATMENT_RELATIONSHIP_REQUEST",
+                    message:       NotificationEvents.TREATMENT_RELATIONSHIP_REQUEST(doctor.fullName, data.relationshipType),
+                    channel:       "sms",
+                });
+            }
+        }
+
+        return {
+            status: "SUCCESS",
+            relationshipID,
+            dormantAfter,
+            relationshipStatus: initialStatus,
+            requiresPatientApproval: requirePatientApproval,
+        };
     } catch (err) {
         console.error("[TreatmentRelationship] create failed:", err);
         return { status: "FAILED", message: err.message };
@@ -273,8 +318,10 @@ export async function markDormant(relationshipID, doctorID) {
 }
 
 /**
- * Reactivate a dormant relationship (e.g. new appointment scheduled).
- * Resets the dormant timer for another 30 days.
+ * Ask to resume a dormant (or expired) relationship, e.g. new appointment.
+ * Puts it back to PENDING; access only resumes when the patient approves via
+ * approveTreatmentRelationship(), which also resets the 30-day timer. Doctors
+ * can no longer renew their own access unilaterally.
  */
 export async function reactivateTreatmentRelationship(relationshipID, doctorID) {
     let gateway, client;
@@ -290,18 +337,124 @@ export async function reactivateTreatmentRelationship(relationshipID, doctorID) 
             return { status: "ACCESS_DENIED", message: "You do not have permission to modify this relationship." };
         }
 
+        // Only a lapsed relationship can be re-requested: DORMANT, or stored
+        // ACTIVE but past DormantAfter (dormancy is evaluated on read, not
+        // persisted). PENDING / DISCHARGED / still-active ones cannot.
+        const lapsed =
+            preData.status === "DORMANT" ||
+            (preData.status === "ACTIVE" && new Date(preData.dormantAfter) <= new Date());
+        if (!lapsed) {
+            return {
+                status:  "FAILED",
+                message: `Only a DORMANT or expired relationship can be reactivated (current status: ${preData.status}).`,
+            };
+        }
+
+        await contract.submitTransaction(
+            "UpdateTreatmentRelationshipStatus",
+            relationshipID,
+            "PENDING",
+            new Date().toISOString()
+        );
+
+        const patient = await PatientAuth.findOne({ patientID: preData.patientID });
+        const doctor  = await Doctor.findOne({ doctorID });
+        if (patient && doctor) {
+            await notify({
+                recipientID:   preData.patientID,
+                recipientRole: "patient",
+                phone:         patient.phone,
+                event:         "TREATMENT_RELATIONSHIP_RENEWAL_REQUEST",
+                message:       NotificationEvents.TREATMENT_RELATIONSHIP_RENEWAL_REQUEST(doctor.fullName),
+                channel:       "sms",
+            });
+        }
+
+        return {
+            status: "SUCCESS",
+            relationshipID,
+            relationshipStatus: "PENDING",
+            requiresPatientApproval: true,
+        };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
+
+/**
+ * Patient approves a PENDING treatment relationship (new, or a renewal
+ * request after dormancy). Only the patient the relationship is about may
+ * approve. Activation goes through the existing chaincode
+ * ReactivateTreatmentRelationship, which also starts a fresh 30-day window.
+ */
+export async function approveTreatmentRelationship(relationshipID, patientID) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+
+        const preRaw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.patientID !== patientID) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to approve this relationship." };
+        }
+        if (preData.status !== "PENDING") {
+            return { status: "FAILED", message: `Only a PENDING relationship can be approved (current status: ${preData.status}).` };
+        }
+
         const now          = new Date();
         const dormantAfter = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        const updatedAt    = now.toISOString();
 
         await contract.submitTransaction(
             "ReactivateTreatmentRelationship",
             relationshipID,
             dormantAfter,
-            updatedAt
+            now.toISOString()
         );
 
-        return { status: "SUCCESS", relationshipID };
+        return { status: "SUCCESS", relationshipID, relationshipStatus: "ACTIVE", dormantAfter };
+    } catch (err) {
+        return { status: "FAILED", message: err.message };
+    } finally {
+        if (gateway) await gateway.close();
+        if (client)  client.close();
+    }
+}
+
+/**
+ * Patient rejects a PENDING treatment relationship. The relationship is
+ * DISCHARGED (terminal), so it can never be reactivated.
+ */
+export async function rejectTreatmentRelationship(relationshipID, patientID) {
+    let gateway, client;
+    try {
+        const result = await getContract("hospital");
+        gateway = result.gateway;
+        client  = result.client;
+        const { contract } = result;
+
+        const preRaw  = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+        const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
+        if (preData.patientID !== patientID) {
+            return { status: "ACCESS_DENIED", message: "You do not have permission to reject this relationship." };
+        }
+        if (preData.status !== "PENDING") {
+            return { status: "FAILED", message: `Only a PENDING relationship can be rejected (current status: ${preData.status}).` };
+        }
+
+        await contract.submitTransaction(
+            "UpdateTreatmentRelationshipStatus",
+            relationshipID,
+            "DISCHARGED",
+            new Date().toISOString()
+        );
+
+        return { status: "SUCCESS", relationshipID, relationshipStatus: "DISCHARGED" };
     } catch (err) {
         return { status: "FAILED", message: err.message };
     } finally {

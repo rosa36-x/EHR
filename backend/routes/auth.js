@@ -3,6 +3,11 @@ import * as authService from "../services/authService.js";
 
 const router = express.Router();
 
+// Body values go straight into Mongo filters ({ phone }), so an object such as
+// { "$ne": null } would match any account. Require plain strings.
+const allStrings = (...vals) => vals.every((v) => typeof v === "string" && v.length > 0);
+
+
 // ── Doctor Auth ───────────────────────────────────────────────────────────────
 // Doctor registration lives at POST /doctors/register (routes/doctor.js),
 // which auto-generates doctorID via idService. This file previously also
@@ -18,7 +23,7 @@ const router = express.Router();
 router.post("/doctor/login", async (req, res) => {
     const { phone, password } = req.body;
 
-    if (!phone || !password) {
+    if (!allStrings(phone, password)) {
         return res.status(400).json({ status: "FAILED", message: "phone and password are required." });
     }
 
@@ -33,7 +38,7 @@ router.post("/doctor/login", async (req, res) => {
 router.post("/doctor/otp/initiate", async (req, res) => {
     const { phone } = req.body;
 
-    if (!phone) {
+    if (!allStrings(phone)) {
         return res.status(400).json({ status: "FAILED", message: "phone is required." });
     }
 
@@ -48,7 +53,7 @@ router.post("/doctor/otp/initiate", async (req, res) => {
 router.post("/doctor/otp/verify", async (req, res) => {
     const { phone, otp } = req.body;
 
-    if (!phone || !otp) {
+    if (!allStrings(phone, otp)) {
         return res.status(400).json({ status: "FAILED", message: "phone and otp are required." });
     }
 
@@ -65,7 +70,7 @@ router.post("/doctor/otp/verify", async (req, res) => {
 router.post("/patient/otp/initiate", async (req, res) => {
     const { phone } = req.body;
 
-    if (!phone) {
+    if (!allStrings(phone)) {
         return res.status(400).json({ status: "FAILED", message: "phone is required." });
     }
 
@@ -80,7 +85,7 @@ router.post("/patient/otp/initiate", async (req, res) => {
 router.post("/patient/otp/verify", async (req, res) => {
     const { phone, otp } = req.body;
 
-    if (!phone || !otp) {
+    if (!allStrings(phone, otp)) {
         return res.status(400).json({ status: "FAILED", message: "phone and otp are required." });
     }
 
@@ -116,7 +121,7 @@ router.post("/org-actor/register", async (req, res) => {
 router.post("/org-actor/login", async (req, res) => {
     const { phone, password } = req.body;
 
-    if (!phone || !password) {
+    if (!allStrings(phone, password)) {
         return res.status(400).json({ status: "FAILED", message: "phone and password are required." });
     }
 

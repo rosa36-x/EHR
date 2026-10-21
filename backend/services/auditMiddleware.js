@@ -18,6 +18,8 @@ import { AuditLogMirror } from "./db.js";
  * - UPDATE       — submitTransaction (update)
  * - ACCESS_DENIED — policy check failed
  * - ACCESS_FAILED — any other error
+ * - EMERGENCY_OVERRIDE — break-glass read of a SENSITIVE record without a
+ *                        permission request (open emergency episode only)
  */
 
 /**

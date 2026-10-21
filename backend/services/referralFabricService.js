@@ -166,7 +166,7 @@ export async function getReferralDocument(referralID, actorID, actorRole) {
         }
 
         const encryptedBuffer = await getFile(referralCID);
-        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef, { actorID, actorRole, resourceID: referralID });
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "REFERRAL", resourceID: referralID });
 

@@ -1,0 +1,24 @@
+meta {
+  name: Security - Cross-Patient Treatment Relationship Approve Denied
+  type: http
+  seq: 23
+}
+
+patch {
+  url: {{base_url}}/treatment-relationships/{{treatment_relationship_id}}/approve
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{second_patient_token}}
+}
+
+tests {
+  test("status 403", function() {
+    expect(res.status).to.equal(403);
+  });
+  test("ACCESS_DENIED status", function() {
+    expect(res.body.status).to.equal("ACCESS_DENIED");
+  });
+}

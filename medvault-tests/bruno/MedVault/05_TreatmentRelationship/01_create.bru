@@ -30,6 +30,10 @@ tests {
   test("SUCCESS status", function() {
     expect(res.body.status).to.equal("SUCCESS");
   });
+  test("created PENDING - needs patient approval, grants no access yet", function() {
+    expect(res.body.relationshipStatus).to.equal("PENDING");
+    expect(res.body.requiresPatientApproval).to.equal(true);
+  });
   test("relationshipID returned with TR prefix", function() {
     expect(res.body.relationshipID).to.match(/^TR/);
     bru.setEnvVar("treatment_relationship_id", res.body.relationshipID);

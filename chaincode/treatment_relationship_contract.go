@@ -20,6 +20,46 @@ func doctorPatientIndexKey(doctorID string, patientID string) string {
 	return fmt.Sprintf("TR_IDX_%s_%s", doctorID, patientID)
 }
 
+// trPairIndexObjectType namespaces the per-relationship pair index. One entry
+// is written per (doctor, patient, relationship). The legacy
+// TR_IDX_<doctor>_<patient> key held a single relationship ID per pair, so a
+// second relationship for the same pair (e.g. an emergency episode opened
+// while an ongoing-care relationship existed) overwrote the first, and
+// closing the second then revoked the doctor's access under both. Composite
+// keys start with U+0000, so they fall outside the "TR_".."TR_~" range scans
+// used by the list queries and need no isIndexKey handling.
+const trPairIndexObjectType = "TRPAIR"
+
+func trPairIndexKey(
+	ctx contractapi.TransactionContextInterface,
+	doctorID string,
+	patientID string,
+	relationshipID string,
+) (string, error) {
+	return ctx.GetStub().CreateCompositeKey(
+		trPairIndexObjectType,
+		[]string{doctorID, patientID, relationshipID},
+	)
+}
+
+// relationshipIsActive is a pure read: ACTIVE and not past DormantAfter.
+// An unparseable DormantAfter fails closed.
+func relationshipIsActive(ctx contractapi.TransactionContextInterface, relationshipID string) bool {
+	relJSON, err := ctx.GetStub().GetState(treatmentRelationshipKey(relationshipID))
+	if err != nil || relJSON == nil {
+		return false
+	}
+	var rel models.TreatmentRelationship
+	if err := json.Unmarshal(relJSON, &rel); err != nil {
+		return false
+	}
+	if rel.Status != "ACTIVE" {
+		return false
+	}
+	dormant, err := time.Parse(time.RFC3339, rel.DormantAfter)
+	return err == nil && !time.Now().After(dormant)
+}
+
 func (s *SmartContract) CreateTreatmentRelationship(
 	ctx contractapi.TransactionContextInterface,
 	relationshipID string,
@@ -47,6 +87,20 @@ func (s *SmartContract) CreateTreatmentRelationship(
 		return fmt.Errorf("treatment relationship %s already exists", relationshipID)
 	}
 
+	// Only an emergency relationship may be created ACTIVE. Every other type
+	// must start PENDING and become ACTIVE through patient approval.
+	if relationshipType == "ASSIGNED_EMERGENCY_PHYSICIAN" {
+		if status != "ACTIVE" {
+			return fmt.Errorf("emergency relationships must be created ACTIVE, got %q", status)
+		}
+	} else if status != "PENDING" {
+		return fmt.Errorf("relationships must be created PENDING until the patient approves, got %q", status)
+	}
+
+	if _, perr := time.Parse(time.RFC3339, dormantAfter); perr != nil {
+		return fmt.Errorf("dormantAfter must be RFC3339: %v", perr)
+	}
+
 	rel := models.TreatmentRelationship{
 		RelationshipID:   relationshipID,
 		PatientID:        patientID,
@@ -64,9 +118,16 @@ func (s *SmartContract) CreateTreatmentRelationship(
 		return err
 	}
 
-	// Write index for fast doctor-patient lookup
-	idxKey := doctorPatientIndexKey(doctorID, patientID)
-	ctx.GetStub().PutState(idxKey, []byte(relationshipID))
+	// Per-relationship pair index: never overwrites another relationship's
+	// entry, and a failed index write now aborts the transaction instead of
+	// being silently dropped.
+	pairKey, err := trPairIndexKey(ctx, doctorID, patientID, relationshipID)
+	if err != nil {
+		return err
+	}
+	if err := ctx.GetStub().PutState(pairKey, []byte(relationshipID)); err != nil {
+		return err
+	}
 
 	return ctx.GetStub().PutState(key, relJSON)
 }
@@ -110,33 +171,42 @@ func (s *SmartContract) CheckActiveTreatmentRelationship(
 		return false, err
 	}
 
-	idxKey := doctorPatientIndexKey(doctorID, patientID)
-	relIDBytes, err := ctx.GetStub().GetState(idxKey)
-	if err != nil || relIDBytes == nil {
-		return false, nil
+	// Pure read: dormancy is evaluated, not persisted. This function is
+	// invoked via evaluateTransaction, where any PutState is discarded, so
+	// the on-chain status only changes through UpdateTreatmentRelationshipStatus.
+	// True if ANY relationship for this (doctor, patient) pair is currently
+	// active; a PENDING, DORMANT, DISCHARGED or expired one never grants access.
+	iter, err := ctx.GetStub().GetStateByPartialCompositeKey(
+		trPairIndexObjectType,
+		[]string{doctorID, patientID},
+	)
+	if err != nil {
+		return false, err
+	}
+	defer iter.Close()
+
+	for iter.HasNext() {
+		kv, err := iter.Next()
+		if err != nil {
+			return false, err
+		}
+		_, parts, err := ctx.GetStub().SplitCompositeKey(kv.Key)
+		if err != nil || len(parts) != 3 {
+			continue
+		}
+		if relationshipIsActive(ctx, parts[2]) {
+			return true, nil
+		}
 	}
 
-	rel, err := s.GetTreatmentRelationship(ctx, string(relIDBytes))
-	if err != nil || rel == nil {
-		return false, nil
+	// Legacy fallback: relationships created before the per-relationship
+	// index only have the single TR_IDX_<doctor>_<patient> entry.
+	legacyID, err := ctx.GetStub().GetState(doctorPatientIndexKey(doctorID, patientID))
+	if err == nil && legacyID != nil && relationshipIsActive(ctx, string(legacyID)) {
+		return true, nil
 	}
 
-	if rel.Status == "DISCHARGED" {
-		return false, nil
-	}
-
-	// Auto-detect dormancy
-	dormant, err := time.Parse(time.RFC3339, rel.DormantAfter)
-	if err == nil && time.Now().After(dormant) {
-		// Auto-mark dormant on-chain
-		rel.Status    = "DORMANT"
-		rel.UpdatedAt = time.Now().Format(time.RFC3339)
-		relJSON, _   := json.Marshal(rel)
-		ctx.GetStub().PutState(treatmentRelationshipKey(rel.RelationshipID), relJSON)
-		return false, nil
-	}
-
-	return rel.Status == "ACTIVE", nil
+	return false, nil
 }
 
 func (s *SmartContract) UpdateTreatmentRelationshipStatus(
@@ -150,9 +220,20 @@ func (s *SmartContract) UpdateTreatmentRelationshipStatus(
 		return err
 	}
 
+	switch status {
+	case "ACTIVE", "PENDING", "DORMANT", "DISCHARGED":
+	default:
+		return fmt.Errorf("invalid relationship status %q", status)
+	}
+
 	rel, err := s.GetTreatmentRelationship(ctx, relationshipID)
 	if err != nil {
 		return err
+	}
+
+	// DISCHARGED is terminal (re-discharging is idempotent).
+	if rel.Status == "DISCHARGED" && status != "DISCHARGED" {
+		return fmt.Errorf("cannot change status of a DISCHARGED relationship")
 	}
 
 	rel.Status    = status
@@ -184,6 +265,10 @@ func (s *SmartContract) ReactivateTreatmentRelationship(
 
 	if rel.Status == "DISCHARGED" {
 		return fmt.Errorf("cannot reactivate a DISCHARGED relationship")
+	}
+
+	if _, perr := time.Parse(time.RFC3339, dormantAfter); perr != nil {
+		return fmt.Errorf("dormantAfter must be RFC3339: %v", perr)
 	}
 
 	rel.Status       = "ACTIVE"
