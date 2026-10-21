@@ -191,7 +191,7 @@ export async function getLabReportDocument(reportID, actorID, actorRole, orgName
         }
 
         const encryptedBuffer = await getFile(reportCID);
-        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef, { actorID, actorRole, resourceID: reportID });
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "LAB_REPORT", resourceID: reportID, actorOrg: mspIdForOrg(orgName) });
 

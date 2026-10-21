@@ -158,7 +158,7 @@ export async function getConsultationDocument(consultationID, actorID, actorRole
         }
 
         const encryptedBuffer = await getFile(consultationCID);
-        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef, { actorID, actorRole, resourceID: consultationID });
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "CONSULTATION", resourceID: consultationID });
 

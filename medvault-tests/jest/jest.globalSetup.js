@@ -6,7 +6,8 @@ module.exports = async () => {
   // Reset KMS store
   const kmsStorePath = path.resolve(__dirname, './data/kms_store.json');
   fs.mkdirSync(path.dirname(kmsStorePath), { recursive: true });
-  fs.writeFileSync(kmsStorePath, JSON.stringify({}));
+  fs.writeFileSync(kmsStorePath, JSON.stringify({ version: 2, keys: {} }));
+  fs.rmSync(path.resolve(__dirname, './data/kms_release_log.jsonl'), { force: true });
   console.log('[globalSetup] Reset KMS store at', kmsStorePath);
 
   // Reset test database

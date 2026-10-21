@@ -126,8 +126,15 @@ describe('IPFS + KMS round-trip via consultation route', () => {
     expect(kmsMock.decryptDocument).toHaveBeenCalledTimes(1);
 
     // decryptDocument must have received the correct keyRef
-    const [, keyRefArg] = kmsMock.decryptDocument.mock.calls[0];
+    const [, keyRefArg, contextArg] = kmsMock.decryptDocument.mock.calls[0];
     expect(keyRefArg).toBe(storedKeyRef);
+
+    // ...and the caller context the KMS logs on every key release
+    expect(contextArg).toEqual({
+      actorID:    DOCTOR_ID,
+      actorRole:  'doctor',
+      resourceID: CONS_ID,
+    });
   });
 
   test('GET /consultations/:id/document - invalid CID -> 500', async () => {

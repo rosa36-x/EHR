@@ -199,7 +199,7 @@ export async function getPrescriptionDocument(prescriptionID, actorID, actorRole
         }
 
         const encryptedBuffer = await getFile(prescriptionCID);
-        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef);
+        const plaintext       = await decryptDocument(encryptedBuffer, encryptionKeyRef, { actorID, actorRole, resourceID: prescriptionID });
 
         await logAudit({ actorID, actorRole, action: "READ", resourceType: "PRESCRIPTION", resourceID: prescriptionID, actorOrg: mspIdForOrg(orgName) });
 
