@@ -3,9 +3,10 @@
  * Determines whether a record is SENSITIVE or NORMAL
  * based on its recordType.
  *
- * Sensitive record types are fixed per DPDP Act 2023,
- * HIV and AIDS (Prevention and Control) Act 2017,
- * and Indian medical ethics guidelines.
+ * The sensitive record types below are this system's own policy list. They are
+ * informed by the HIV and AIDS (Prevention and Control) Act 2017 and Indian
+ * medical ethics guidelines. They are not a statutory list: the Digital
+ * Personal Data Protection Act 2023 has no sensitive-data category.
  *
  * Sensitive records require explicit patient permission
  * before a doctor can access them (unless an active

@@ -102,7 +102,7 @@ Each of these follows the same pattern: validate inputs → encrypt file via KMS
 | File | Description |
 |------|-------------|
 | `doctorService.js` | Doctor profile management at the application layer. `createDoctor` generates a `DOC`-prefixed ID then delegates to `authService.registerDoctor`. `getDoctorByID` and `getDoctorByPhone` query MongoDB and strip `passwordHash` from results. `getDoctorsByHospital` returns all doctors at a given hospital. |
-| `sensitivityService.js` | Record type taxonomy and sensitivity classification. Defines all valid `recordType` values for consultations, lab reports, and prescriptions, mapped to sensitivity levels (`NORMAL`, `SENSITIVE`, `RESTRICTED`) per DPDP Act 2023, HIV/AIDS Act 2017, and Indian medical ethics guidelines. Exports `classifyRecord(recordType)`, `getSensitivityLevel(recordType)`, and `isValidRecordType(category, recordType)`. |
+| `sensitivityService.js` | Record type taxonomy and sensitivity classification. Defines all valid `recordType` values for consultations, lab reports, and prescriptions, mapped to sensitivity levels (`NORMAL`, `SENSITIVE`, `RESTRICTED`) by an internal policy list informed by the HIV/AIDS Act 2017 and Indian medical ethics guidelines (the DPDP Act 2023 has no sensitive-data category). Exports `classifyRecord(recordType)`, `getSensitivityLevel(recordType)`, and `isValidRecordType(category, recordType)`. |
 | `uidaiService.js` | Mock UIDAI (Aadhaar) service. `authenticate(aadhaarNumber, dob)` looks up the citizen in `aadhaar_db.json`, generates a 6-digit OTP and a `TXN`-prefixed transaction ID, stores the OTP in `otpStore.js`, and prints it to the console. `verifyOTP(transactionID, otp)` validates and returns a mock VID and token. |
 
 ---

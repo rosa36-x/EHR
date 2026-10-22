@@ -7,6 +7,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
+    "emergency:expiry": "node emergencyExpiryWorker.js",
      "db:reset": "node reset-test-db.js",
     "kms:migrate": "node scripts/migrateKmsStore.js",
     "kms:rotate-kek": "node scripts/rotateKmsKek.js"

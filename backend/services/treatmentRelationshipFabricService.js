@@ -30,6 +30,10 @@ export const TreatmentRelationshipTypes = [
     "ASSIGNED_EMERGENCY_PHYSICIAN",
 ];
 
+const EMERGENCY_RELATIONSHIP_TYPE = "ASSIGNED_EMERGENCY_PHYSICIAN";
+const EMERGENCY_ONLY_MESSAGE =
+    "Emergency relationships can only be ended by closing the emergency access.";
+
 /**
  * Create a treatment relationship between a doctor and patient.
  *
@@ -223,8 +227,12 @@ export async function hasActiveTreatmentRelationship(doctorID, patientID) {
 
 /**
  * Discharge a patient — sets relationship to DISCHARGED and revokes access.
+ *
+ * options.notifyPatient (default true): send the "relationship ended" SMS.
+ * A caller that sends its own message, or that may call this repeatedly for the
+ * same relationship (the emergency expiry sweeper retries), passes false.
  */
-export async function dischargePatient(relationshipID, doctorID, skipOwnershipCheck = false) {
+export async function dischargePatient(relationshipID, doctorID, skipOwnershipCheck = false, { notifyPatient = true } = {}) {
     let gateway, client;
     try {
         const result = await getContract("hospital");
@@ -242,6 +250,9 @@ export async function dischargePatient(relationshipID, doctorID, skipOwnershipCh
         if (!skipOwnershipCheck && preData.doctorID !== doctorID) {
             return { status: "ACCESS_DENIED", message: "You do not have permission to discharge this relationship." };
         }
+        if (!skipOwnershipCheck && preData.relationshipType === EMERGENCY_RELATIONSHIP_TYPE) {
+            return { status: "ACCESS_DENIED", message: EMERGENCY_ONLY_MESSAGE };
+        }
 
         const updatedAt = new Date().toISOString();
 
@@ -252,21 +263,22 @@ export async function dischargePatient(relationshipID, doctorID, skipOwnershipCh
             updatedAt
         );
 
-        // Notify patient
-        const raw     = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
-        const relData = JSON.parse(Buffer.from(raw).toString("utf8"));
-        const patient = await PatientAuth.findOne({ patientID: relData.patientID });
-        const doctor  = await Doctor.findOne({ doctorID });
+        if (notifyPatient) {
+            const raw     = await contract.evaluateTransaction("GetTreatmentRelationship", relationshipID);
+            const relData = JSON.parse(Buffer.from(raw).toString("utf8"));
+            const patient = await PatientAuth.findOne({ patientID: relData.patientID });
+            const doctor  = await Doctor.findOne({ doctorID });
 
-        if (patient && doctor) {
-            await notify({
-                recipientID:   relData.patientID,
-                recipientRole: "patient",
-                phone:         patient.phone,
-                event:         "TREATMENT_RELATIONSHIP_ENDED",
-                message:       NotificationEvents.TREATMENT_RELATIONSHIP_ENDED(doctor.fullName),
-                channel:       "sms",
-            });
+            if (patient && doctor) {
+                await notify({
+                    recipientID:   relData.patientID,
+                    recipientRole: "patient",
+                    phone:         patient.phone,
+                    event:         "TREATMENT_RELATIONSHIP_ENDED",
+                    message:       NotificationEvents.TREATMENT_RELATIONSHIP_ENDED(doctor.fullName),
+                    channel:       "sms",
+                });
+            }
         }
 
         return { status: "SUCCESS", relationshipID };
@@ -297,6 +309,9 @@ export async function markDormant(relationshipID, doctorID) {
         const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
         if (preData.doctorID !== doctorID) {
             return { status: "ACCESS_DENIED", message: "You do not have permission to modify this relationship." };
+        }
+        if (preData.relationshipType === EMERGENCY_RELATIONSHIP_TYPE) {
+            return { status: "ACCESS_DENIED", message: EMERGENCY_ONLY_MESSAGE };
         }
 
         const updatedAt = new Date().toISOString();
@@ -335,6 +350,9 @@ export async function reactivateTreatmentRelationship(relationshipID, doctorID) 
         const preData = JSON.parse(Buffer.from(preRaw).toString("utf8"));
         if (preData.doctorID !== doctorID) {
             return { status: "ACCESS_DENIED", message: "You do not have permission to modify this relationship." };
+        }
+        if (preData.relationshipType === EMERGENCY_RELATIONSHIP_TYPE) {
+            return { status: "ACCESS_DENIED", message: EMERGENCY_ONLY_MESSAGE };
         }
 
         // Only a lapsed relationship can be re-requested: DORMANT, or stored

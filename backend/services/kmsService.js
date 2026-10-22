@@ -11,7 +11,8 @@ import path from "path";
  * KMS_KEK_FILE (path to a file containing 64 hex chars) or KMS_KEK (64 hex).
  *
  * Store:    backend/data/kms_store.json         (wrapped DEKs + key status)
- * Release:  backend/data/kms_release_log.jsonl  (append-only, one line per release)
+ * Release:  backend/data/kms_release_log.jsonl  (append-only: one line per key release or
+ *           refused release, plus KEY_REVOKE / KEY_DESTROY lifecycle events)
  *
  * Store layout:
  * {
@@ -378,7 +379,8 @@ export async function getKey(keyRef) {
 async function auditKeyEvent(action, keyRef, context) {
     try {
         const { logAudit } = await import("./auditMiddleware.js");
-        return await logAudit({
+        // logAudit never throws; it returns null when the ledger write failed.
+        const auditID = await logAudit({
             actorID:      context.actorID,
             actorRole:    context.actorRole,
             action,
@@ -386,17 +388,57 @@ async function auditKeyEvent(action, keyRef, context) {
             resourceID:   keyRef,
             actorOrg:     context.actorOrg ?? "",
         });
+        return auditID ?? null;
     } catch (err) {
         console.error(`[KMS] Failed to audit ${action}:`, err.message);
         return null;
     }
 }
 
-function transition(keyRef, context, allowedFrom, apply) {
+/**
+ * Local record of a key lifecycle event, kept next to the release log so a
+ * revoke or destroy always leaves a trail even when the ledger audit failed.
+ * auditPending is true when no on-chain audit ID could be obtained.
+ * Best-effort: a failure here is logged and never changes the outcome.
+ */
+function recordKeyEvent(event, keyRef, context, auditID) {
+    try {
+        appendReleaseLog({
+            event,
+            keyRef,
+            actorID:      context.actorID,
+            actorRole:    context.actorRole,
+            auditID:      auditID ?? null,
+            auditPending: !auditID,
+        });
+    } catch (err) {
+        console.error(`[KMS] Failed to write release log (${event}):`, err.message);
+    }
+}
+
+/** Validate a lifecycle change without applying it. Returns the current record. */
+function checkTransition(keyRef, context, allowedFrom) {
     if (!hasFields(context, ["actorID", "actorRole"])) {
         throw new Error("[KMS] Caller context required: actorID and actorRole");
     }
 
+    const record = getStore().get(keyRef);
+
+    if (!record) {
+        throw new Error(`[KMS] Key not found: ${keyRef}`);
+    }
+    if (!allowedFrom.includes(record.status)) {
+        throw new Error(`[KMS] Key ${keyRef} cannot move from ${record.status}`);
+    }
+    return record;
+}
+
+/**
+ * Apply a lifecycle change and persist it atomically. The status is checked
+ * again against the current record, so a change made while an audit call was
+ * in flight is not overwritten.
+ */
+function applyTransition(keyRef, allowedFrom, apply) {
     const store  = getStore();
     const record = store.get(keyRef);
 
@@ -422,14 +464,21 @@ function transition(keyRef, context, allowedFrom, apply) {
 
 /**
  * Block further decryption with a key. Reversible only by editing the store.
+ *
+ * Revocation must stay available during an incident, so it does not depend on
+ * the ledger: the state change is applied first, then the ledger audit is
+ * attempted. If the audit fails, auditID is null and the event is still
+ * written to the local log with auditPending: true.
  */
 export async function revokeKey(keyRef, context) {
-    const next = transition(keyRef, context, ["ACTIVE"], (r) => ({
+    checkTransition(keyRef, context, ["ACTIVE"]);
+    const next = applyTransition(keyRef, ["ACTIVE"], (r) => ({
         ...r,
         status:    "REVOKED",
         revokedAt: new Date().toISOString(),
     }));
     const auditID = await auditKeyEvent("KEY_REVOKE", keyRef, context);
+    recordKeyEvent("KEY_REVOKE", keyRef, context, auditID);
     return { keyID: keyRef, status: next.status, auditID };
 }
 
@@ -438,13 +487,34 @@ export async function revokeKey(keyRef, context) {
  * encrypted under it become permanently unreadable. Copies of an older store
  * file (backups) still hold the wrapped DEK until they are purged or the KEK
  * they were wrapped under is retired.
+ *
+ * Destroying is irreversible, so it fails closed: the ledger audit is written
+ * first, and if it cannot be written the key is left untouched. If the audit
+ * succeeds but the store write then fails, the ledger holds a KEY_DESTROY
+ * entry for a key that still exists; that case is recorded locally as
+ * KEY_DESTROY_FAILED with the audit ID so the two can be reconciled.
  */
 export async function destroyKey(keyRef, context) {
-    const next = transition(keyRef, context, ["ACTIVE", "REVOKED"], (r) => {
-        const { wrapped, ...rest } = r;
-        return { ...rest, status: "DESTROYED", destroyedAt: new Date().toISOString() };
-    });
+    checkTransition(keyRef, context, ["ACTIVE", "REVOKED"]);
+
     const auditID = await auditKeyEvent("KEY_DESTROY", keyRef, context);
+    if (!auditID) {
+        recordKeyEvent("KEY_DESTROY_REFUSED", keyRef, context, null);
+        throw new Error("[KMS] Audit write failed — key not destroyed");
+    }
+
+    let next;
+    try {
+        next = applyTransition(keyRef, ["ACTIVE", "REVOKED"], (r) => {
+            const { wrapped, ...rest } = r;
+            return { ...rest, status: "DESTROYED", destroyedAt: new Date().toISOString() };
+        });
+    } catch (err) {
+        recordKeyEvent("KEY_DESTROY_FAILED", keyRef, context, auditID);
+        throw err;
+    }
+
+    recordKeyEvent("KEY_DESTROY", keyRef, context, auditID);
     return { keyID: keyRef, status: next.status, auditID };
 }
 

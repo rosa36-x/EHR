@@ -60,6 +60,15 @@ router.post("/", authenticate, authorizeRoles("doctor"), emergencyLimiter, async
 });
 
 /**
+ * GET /emergency-access
+ * The calling doctor's own active, unexpired emergency accesses.
+ */
+router.get("/", authenticate, authorizeRoles("doctor"), async (req, res) => {
+    const result = await svc.listActiveEmergencyAccess(req.user.id);
+    return res.status(result.status === "SUCCESS" ? 200 : 500).json(result);
+});
+
+/**
  * GET /emergency-access/:id
  */
 router.get("/:id", authenticate, async (req, res) => {

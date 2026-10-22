@@ -169,6 +169,103 @@ export async function createEmergencyAccess(data, actorID) {
     }
 }
 
+export async function listActiveEmergencyAccess(doctorID) {
+    try {
+        const logs = await EmergencyAccessLog.find({
+            doctorID,
+            status:    "ACTIVE",
+            expiresAt: { $gt: new Date().toISOString() },
+        }).sort({ createdAt: -1 }).lean();
+        const data = logs.map((l) => ({
+            emergencyAccessID: l.emergencyAccessID,
+            relationshipID:    l.relationshipID,
+            patientID:         l.patientID,
+            reason:            l.reason,
+            status:            l.status,
+            createdAt:         l.createdAt,
+            expiresAt:         l.expiresAt,
+        }));
+        return { status: "SUCCESS", data };
+    } catch (err) {
+        console.error("[EmergencyAccess] listActiveEmergencyAccess failed:", err);
+        return { status: "FAILED", message: err.message };
+    }
+}
+
+/**
+ * Close every emergency access whose 24h window has lapsed. Access itself is
+ * already denied at expiry (hasActiveEmergencyAccess checks expiresAt); this
+ * brings the stored state in line: backing relationship DISCHARGED, ledger
+ * record CLOSED, log CLOSED with closedBy "system", audit entry, patient SMS.
+ * Intended to be run periodically by emergencyExpiryWorker.js.
+ */
+export async function expireStaleEmergencyAccess() {
+    const stale = await EmergencyAccessLog.find({
+        status:    "ACTIVE",
+        expiresAt: { $lte: new Date().toISOString() },
+    });
+
+    let closed = 0;
+    let failed = 0;
+
+    for (const log of stale) {
+        try {
+            // notifyPatient:false — this sweep sends its own message below, and an
+            // episode whose ledger update fails is retried on the next sweep, so the
+            // discharge SMS must not repeat each time.
+            const dischargeResult = await dischargePatient(log.relationshipID, log.doctorID, true, { notifyPatient: false });
+            if (dischargeResult.status !== "SUCCESS") {
+                console.error(`[EmergencyAccess] Expiry: failed to discharge relationship for ${log.emergencyAccessID}:`, dischargeResult.message);
+                failed++;
+                continue;
+            }
+
+            // The ledger update is idempotent (CLOSED -> CLOSED is a no-op), so if it
+            // fails the episode is left ACTIVE here and the next sweep tries again.
+            // Marking the log CLOSED first would hide the episode from every later sweep.
+            const ledgerClosed = await markLedgerEmergencyStatus(log.emergencyAccessID, "CLOSED");
+            if (!ledgerClosed) {
+                console.error(`[EmergencyAccess] Expiry: ledger not updated for ${log.emergencyAccessID}; will retry on the next sweep.`);
+                failed++;
+                continue;
+            }
+
+            log.status   = "CLOSED";
+            log.closedAt = new Date().toISOString();
+            log.closedBy = "system";
+            await log.save();
+
+            await logAudit({
+                actorID:      "emergency-expiry-sweeper",
+                actorRole:    "system",
+                action:       "UPDATE",
+                resourceType: "EMERGENCY_ACCESS",
+                resourceID:   log.emergencyAccessID,
+            });
+
+            const patient = await PatientAuth.findOne({ patientID: log.patientID });
+            const doctor  = await Doctor.findOne({ doctorID: log.doctorID });
+            if (patient && doctor) {
+                await notify({
+                    recipientID:   log.patientID,
+                    recipientRole: "patient",
+                    phone:         patient.phone,
+                    event:         "EMERGENCY_ACCESS_ENDED",
+                    message:       `Emergency access to your records by Dr. ${doctor.fullName} has expired and ended.`,
+                    channel:       "sms",
+                });
+            }
+
+            closed++;
+        } catch (err) {
+            console.error(`[EmergencyAccess] Expiry: unexpected error for ${log.emergencyAccessID}:`, err);
+            failed++;
+        }
+    }
+
+    return { scanned: stale.length, closed, failed };
+}
+
 export async function getEmergencyAccess(emergencyAccessID, actorID, actorRole) {
     let gateway, client;
     try {

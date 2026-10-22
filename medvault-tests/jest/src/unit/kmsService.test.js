@@ -341,6 +341,90 @@ describe('kmsService - revoke and destroy', () => {
   });
 });
 
+describe('kmsService - audit behaviour of revoke and destroy', () => {
+  test('revoke is recorded in the local log with its audit ID', async () => {
+    const { keyRef } = await kmsService.encryptDocument(payload);
+    await kmsService.revokeKey(keyRef, admin);
+    expect(readLog().pop()).toMatchObject({
+      event: 'KEY_REVOKE', keyRef, actorID: 'GOV_ADMIN_001', actorRole: 'admin',
+      auditID: 'AUDIT_TEST_001', auditPending: false,
+    });
+  });
+
+  test('revoke still succeeds when the ledger audit fails, and is logged as pending', async () => {
+    mockLogAudit.mockResolvedValueOnce(null); // what logAudit returns when the ledger write fails
+    const { encryptedBuffer, keyRef } = await kmsService.encryptDocument(payload);
+    const res = await kmsService.revokeKey(keyRef, admin);
+    expect(res).toEqual({ keyID: keyRef, status: 'REVOKED', auditID: null });
+    expect(readLog().pop()).toMatchObject({ event: 'KEY_REVOKE', keyRef, auditID: null, auditPending: true });
+    await expect(kmsService.decryptDocument(encryptedBuffer, keyRef, ctx)).rejects.toThrow(/not active \(REVOKED\)/);
+  });
+
+  test('revoke still succeeds when the ledger audit throws, and is logged as pending', async () => {
+    mockLogAudit.mockRejectedValueOnce(new Error('ledger down'));
+    const { keyRef } = await kmsService.encryptDocument(payload);
+    const res = await kmsService.revokeKey(keyRef, admin);
+    expect(res.status).toBe('REVOKED');
+    expect(readLog().pop()).toMatchObject({ event: 'KEY_REVOKE', keyRef, auditPending: true });
+  });
+
+  test('destroy writes the audit before it removes the key', async () => {
+    const { keyRef } = await kmsService.encryptDocument(payload);
+    let wrappedAtAuditTime;
+    mockLogAudit.mockImplementationOnce(async () => {
+      wrappedAtAuditTime = JSON.parse(fs.readFileSync(KMS_STORE_PATH, 'utf8')).keys[keyRef].wrapped;
+      return 'AUDIT_TEST_002';
+    });
+    const res = await kmsService.destroyKey(keyRef, admin);
+    expect(typeof wrappedAtAuditTime).toBe('string'); // key was still present when the audit ran
+    expect(res).toEqual({ keyID: keyRef, status: 'DESTROYED', auditID: 'AUDIT_TEST_002' });
+    expect(readLog().pop()).toMatchObject({ event: 'KEY_DESTROY', keyRef, auditID: 'AUDIT_TEST_002', auditPending: false });
+  });
+
+  test.each([
+    ['returns null', (m) => m.mockResolvedValueOnce(null)],
+    ['throws', (m) => m.mockRejectedValueOnce(new Error('ledger down'))],
+  ])('destroy is refused and the key is untouched when the ledger audit %s', async (_label, arrange) => {
+    const { encryptedBuffer, keyRef } = await kmsService.encryptDocument(payload);
+    arrange(mockLogAudit);
+
+    await expect(kmsService.destroyKey(keyRef, admin)).rejects.toThrow(/Audit write failed — key not destroyed/);
+
+    const record = JSON.parse(fs.readFileSync(KMS_STORE_PATH, 'utf8')).keys[keyRef];
+    expect(record.status).toBe('ACTIVE');
+    expect(record.wrapped).toMatch(/^[0-9a-f]{120}$/);
+    expect(readLog().pop()).toMatchObject({ event: 'KEY_DESTROY_REFUSED', keyRef, auditPending: true });
+    expect((await kmsService.decryptDocument(encryptedBuffer, keyRef, ctx)).equals(payload)).toBe(true);
+  });
+
+  test('destroy of an unknown or already-destroyed key is rejected before any audit is written', async () => {
+    const { keyRef } = await kmsService.encryptDocument(payload);
+    await kmsService.destroyKey(keyRef, admin);
+    mockLogAudit.mockClear();
+    await expect(kmsService.destroyKey(keyRef, admin)).rejects.toThrow(/cannot move from DESTROYED/);
+    await expect(kmsService.destroyKey('KEY9999', admin)).rejects.toThrow(/not found/i);
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  test('a store write failure after a successful audit leaves the key intact and is logged for reconciliation', async () => {
+    const { encryptedBuffer, keyRef } = await kmsService.encryptDocument(payload);
+    // Make the atomic write fail by replacing the store directory's temp-file path
+    // with an unwritable condition: point the store at a read-only directory is not
+    // portable, so instead break the store file itself into a directory.
+    fs.rmSync(KMS_STORE_PATH, { force: true });
+    fs.mkdirSync(KMS_STORE_PATH);
+    try {
+      await expect(kmsService.destroyKey(keyRef, admin)).rejects.toThrow(/Key store write failed/);
+    } finally {
+      fs.rmdirSync(KMS_STORE_PATH);
+    }
+    expect(readLog().pop()).toMatchObject({ event: 'KEY_DESTROY_FAILED', keyRef, auditID: 'AUDIT_TEST_001', auditPending: false });
+    const meta = await kmsService.getKey(keyRef); // in-memory state was rolled back
+    expect(meta.status).toBe('ACTIVE');
+    expect(encryptedBuffer.length).toBeGreaterThan(0);
+  });
+});
+
 describe('kmsService - KEK rotation', () => {
   test('rewrapAllKeys moves every key to the new KEK without changing keyRefs', async () => {
     const docs = [];
