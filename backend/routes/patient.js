@@ -2,7 +2,7 @@ import express from "express";
 
 import * as uidaiService from "../services/uidaiService.js";
 import * as patientFabricService from "../services/patientFabricService.js";
-import { authenticate } from "../services/authMiddleware.js";
+import { authenticate, authorizeRoles } from "../services/authMiddleware.js";
 import { generatePatientAuthToken } from "../services/authService.js";
 import { PatientAuth } from "../services/db.js";
 const router = express.Router();
@@ -124,8 +124,10 @@ router.get("/:id", authenticate, async (req, res) => {
  * For unidentified/unconscious patients: resolves a biometric scan to a
  * real, already-registered patientID via the stable aadhaarHash — used to
  * bootstrap emergency access when the doctor doesn't have a patientID yet.
+ * Doctors only: it turns a fingerprint into a patientID, so patients and
+ * organisation actors must not be able to call it.
  */
-router.post("/resolve-biometric", authenticate, async (req, res) => {
+router.post("/resolve-biometric", authenticate, authorizeRoles("doctor"), async (req, res) => {
     const { fingerprintTemplate } = req.body;
 
     if (!fingerprintTemplate) {

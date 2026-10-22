@@ -7,7 +7,7 @@
  * mock, so the fingerprint -> aadhaarHash -> PatientAuth lookup runs for real.
  * Only the database and Fabric are mocked.
  *
- *   - no token -> 401
+ *   - no token -> 401; patient or organisation-actor role -> 403 (doctors only)
  *   - missing fingerprintTemplate -> 400
  *   - template the UIDAI mock does not know -> 400, no database lookup
  *   - known template, patient registered -> 200 with patientID and fullName
@@ -60,6 +60,16 @@ beforeEach(() => {
 });
 
 describe('POST /patients/resolve-biometric', () => {
+  test.each([
+    ['patient',   makeToken('patient', 'PAT_BIO_1')],
+    ['org_actor', makeToken('org_actor', 'ORG_BIO_1')],
+  ])('%s role -> 403, nothing is looked up', async (_role, token) => {
+    const res = await post({ fingerprintTemplate: alice.fingerprintTemplate }, token);
+    expect(res.status).toBe(403);
+    expect(res.body).not.toHaveProperty('patientID');
+    expect(PatientAuth.findOne).not.toHaveBeenCalled();
+  });
+
   test('no token -> 401, nothing is looked up', async () => {
     const res = await post({ fingerprintTemplate: alice.fingerprintTemplate }, null);
     expect(res.status).toBe(401);
