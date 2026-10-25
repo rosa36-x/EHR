@@ -10,7 +10,7 @@ Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only (rows
 | temporal-test | Votes>=4 (legacy rule) | 44.400 ± 5.835 | 48.900 ± 8.306 | 29.200 ± 6.779 | 19.700 ± 4.218 | 0.595 ± 0.073 | 0.653 ± 0.090 | 0.621 ± 0.074 | 57.813 ± 9.180 | 0.905 ± 0.071 | nan |
 | temporal-test | IForest only (p97) | 44.400 ± 5.835 | 23.700 ± 6.255 | 20.600 ± 5.700 | 3.100 ± 2.079 | 0.870 ± 0.096 | 0.460 ± 0.101 | 0.596 ± 0.091 | 28.006 ± 7.161 | 1.000 ± 0.000 | 0.645 ± 0.081 |
 | temporal-test | LSTM only (p99) | 44.400 ± 5.835 | 28.600 ± 3.777 | 9.300 ± 4.111 | 19.300 ± 2.497 | 0.318 ± 0.105 | 0.205 ± 0.070 | 0.248 ± 0.083 | 33.833 ± 4.057 | 1.000 ± 0.000 | 0.295 ± 0.096 |
-| temporal-test | DeepLog-style (budget-matched g) | 44.400 ± 5.835 | 27.100 ± 6.226 | 20.400 ± 5.502 | 6.700 ± 3.713 | 0.756 ± 0.123 | 0.455 ± 0.075 | 0.565 ± 0.081 | 32.039 ± 6.936 | 1.000 ± 0.000 | 0.626 ± 0.115 |
+| temporal-test | DeepLog-style (budget-matched g) | 44.400 ± 5.835 | 24.900 ± 5.238 | 19.400 ± 5.254 | 5.500 ± 3.240 | 0.777 ± 0.116 | 0.433 ± 0.084 | 0.554 ± 0.094 | 29.449 ± 5.934 | 1.000 ± 0.000 | 0.626 ± 0.115 |
 | temporal-test | Deployed P1+P2 | 44.400 ± 5.835 | 44.000 ± 6.164 | 23.700 ± 7.103 | 20.300 ± 2.312 | 0.529 ± 0.094 | 0.527 ± 0.119 | 0.527 ± 0.102 | 52.047 ± 6.775 | 0.963 ± 0.059 | nan |
 | temporal-test | Supervised LR (train+val labels) | 44.400 ± 5.835 | 70.800 ± 11.429 | 33.900 ± 7.094 | 36.900 ± 5.567 | 0.476 ± 0.043 | 0.760 ± 0.097 | 0.585 ± 0.057 | 83.701 ± 12.356 | 0.631 ± 0.055 | 0.749 ± 0.073 |
 | temporal-test | Supervised SVM (train+val labels) | 44.400 ± 5.835 | 64.100 ± 17.458 | 33.600 ± 7.043 | 30.500 ± 14.042 | 0.541 ± 0.120 | 0.754 ± 0.102 | 0.620 ± 0.078 | 75.852 ± 20.512 | 0.723 ± 0.181 | 0.587 ± 0.118 |
@@ -22,16 +22,16 @@ Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only (rows
 
 | seed | n_windows | n_pos_total | n_pos_train | n_pos_val | n_pos_test | n_test_windows | lstm_epochs | g | seconds |
 |---|---|---|---|---|---|---|---|---|---|
-| 1.0 | 4404.0 | 245.0 | 149.0 | 48.0 | 48.0 | 857.0 | 9.0 | 60.0 | 13.0 |
-| 2.0 | 4422.0 | 246.0 | 143.0 | 57.0 | 46.0 | 855.0 | 9.0 | 130.0 | 9.9 |
-| 3.0 | 4227.0 | 239.0 | 152.0 | 54.0 | 33.0 | 814.0 | 8.0 | 130.0 | 9.4 |
-| 4.0 | 4384.0 | 244.0 | 154.0 | 48.0 | 42.0 | 845.0 | 7.0 | 100.0 | 9.3 |
-| 5.0 | 4373.0 | 245.0 | 157.0 | 47.0 | 41.0 | 850.0 | 8.0 | 130.0 | 9.9 |
-| 6.0 | 4302.0 | 242.0 | 150.0 | 48.0 | 44.0 | 823.0 | 9.0 | 100.0 | 9.6 |
-| 7.0 | 4302.0 | 242.0 | 158.0 | 40.0 | 44.0 | 836.0 | 11.0 | 130.0 | 9.9 |
-| 8.0 | 4438.0 | 242.0 | 138.0 | 48.0 | 56.0 | 875.0 | 11.0 | 130.0 | 10.6 |
-| 9.0 | 4378.0 | 240.0 | 139.0 | 54.0 | 47.0 | 845.0 | 8.0 | 130.0 | 9.5 |
-| 10.0 | 4369.0 | 247.0 | 154.0 | 50.0 | 43.0 | 845.0 | 8.0 | 100.0 | 9.8 |
+| 1.0 | 4404.0 | 245.0 | 149.0 | 48.0 | 48.0 | 857.0 | 9.0 | 60.0 | 13.1 |
+| 2.0 | 4422.0 | 246.0 | 143.0 | 57.0 | 46.0 | 855.0 | 9.0 | 130.0 | 10.2 |
+| 3.0 | 4227.0 | 239.0 | 152.0 | 54.0 | 33.0 | 814.0 | 8.0 | 145.0 | 9.6 |
+| 4.0 | 4384.0 | 244.0 | 154.0 | 48.0 | 42.0 | 845.0 | 7.0 | 115.0 | 9.2 |
+| 5.0 | 4373.0 | 245.0 | 157.0 | 47.0 | 41.0 | 850.0 | 8.0 | 145.0 | 10.0 |
+| 6.0 | 4302.0 | 242.0 | 150.0 | 48.0 | 44.0 | 823.0 | 9.0 | 100.0 | 9.9 |
+| 7.0 | 4302.0 | 242.0 | 158.0 | 40.0 | 44.0 | 836.0 | 11.0 | 115.0 | 10.2 |
+| 8.0 | 4438.0 | 242.0 | 138.0 | 48.0 | 56.0 | 875.0 | 11.0 | 145.0 | 10.3 |
+| 9.0 | 4378.0 | 240.0 | 139.0 | 54.0 | 47.0 | 845.0 | 8.0 | 145.0 | 9.7 |
+| 10.0 | 4369.0 | 247.0 | 154.0 | 50.0 | 43.0 | 845.0 | 8.0 | 100.0 | 9.7 |
 
 
 # Threshold sweep (mean over seeds; P1 percentile fit on VAL)
@@ -72,11 +72,11 @@ Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only (rows
 | LSTM only (p99) | dispense_without_read | 56 | 3 | 0.054 |
 | LSTM only (p99) | off_hours_burst | 63 | 5 | 0.079 |
 | LSTM only (p99) | order_composition | 62 | 6 | 0.097 |
-| DeepLog-style (budget-matched g) | bigram_violation | 66 | 37 | 0.561 |
-| DeepLog-style (budget-matched g) | broad_access | 64 | 1 | 0.016 |
-| DeepLog-style (budget-matched g) | consent_probe | 72 | 70 | 0.972 |
-| DeepLog-style (budget-matched g) | cross_org_denied | 61 | 51 | 0.836 |
-| DeepLog-style (budget-matched g) | dispense_without_read | 56 | 36 | 0.643 |
+| DeepLog-style (budget-matched g) | bigram_violation | 66 | 33 | 0.5 |
+| DeepLog-style (budget-matched g) | broad_access | 64 | 0 | 0.0 |
+| DeepLog-style (budget-matched g) | consent_probe | 72 | 69 | 0.958 |
+| DeepLog-style (budget-matched g) | cross_org_denied | 61 | 50 | 0.82 |
+| DeepLog-style (budget-matched g) | dispense_without_read | 56 | 33 | 0.589 |
 | DeepLog-style (budget-matched g) | off_hours_burst | 63 | 9 | 0.143 |
 | DeepLog-style (budget-matched g) | order_composition | 62 | 0 | 0.0 |
 | Deployed P1+P2 | bigram_violation | 66 | 6 | 0.091 |
