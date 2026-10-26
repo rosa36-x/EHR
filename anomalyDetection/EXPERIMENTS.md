@@ -88,3 +88,10 @@ anomaly" from "the model learned the anomaly as normal because training was cont
 Note: with clean training, `dispense_without_read_count` is constant 0 in the fit data, which made PyOD's
 PCA return +inf for every row (PCA silently dropped out of the ensemble). `run_ensemble` now floors the PCA
 component weights at 1e-3 and refreshes its threshold; normal runs are unaffected (identical TP/FP).
+
+## Label-free filtered training (`--p1-filtered-train`)
+
+Trains the LSTM (and so P2 and the DeepLog-style rule) without the training actor-days that P1 flags
+(threshold = p97 of validation scores; no labels used). Labels are used only to report how many positives the
+filter removed (`n_train_excluded_pos` in `dataset_per_seed.csv`). Purpose: test whether a deployable filter
+recovers the clean-training (oracle) result. The ensemble is not refit.

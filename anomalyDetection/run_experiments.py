@@ -31,6 +31,7 @@ Methods
 Extra experiments
   --sanity           print dataset diagnostics (legacy vs v2): counts, positives per
                      split, benign-denial rate, single-feature ROC-AUC. No models.
+  --p1-filtered-train label-free: train the LSTM without the training actor-days that P1 flags
   --clean-train      oracle ablation: fit ensemble + LSTM on training data with every injected event removed
                      (thresholds are still set on the unmodified validation split)
   --exclude-type T   remove anomaly type T from everything the models are fitted on
@@ -272,7 +273,7 @@ class NextEventLSTM(nn.Module):
         return self.out(h)
 
 
-def train_and_score_lstm(df, d0, train_end, val_end, seed, train_exclude_type=None,
+def train_and_score_lstm(df, d0, train_end, val_end, seed, train_exclude_type=None, exclude_windows=None,
                          epochs=25, patience=5, lr=1e-2, embed_dim=16, hidden_dim=32):
     """Trains on events with day < train_end only. Early stopping on val-period
     loss (the LSTM is causal, so a forward pass over a full sequence never lets
@@ -285,6 +286,9 @@ def train_and_score_lstm(df, d0, train_end, val_end, seed, train_exclude_type=No
         train_src = df[df["anomaly_type"].fillna("") != train_exclude_type]
     train_ev = seq_table(train_src, d0)
     train_ev = train_ev[train_ev["day"] < train_end]
+    if exclude_windows:  # label-free filter: drop events of actor-days flagged by P1; tokens keep their original gaps
+        keys = pd.MultiIndex.from_frame(train_ev[["actorID", "date_s"]])
+        train_ev = train_ev[~keys.isin(list(exclude_windows))]
 
     vocab_tokens = sorted(set(train_ev["token"]) | {START_TOKEN, UNK_TOKEN})
     vocab = {t: i for i, t in enumerate(vocab_tokens)}
@@ -398,9 +402,18 @@ def run_seed(seed, args):
     ens, iforest, votes = run_ensemble(feats, fit_mask, args.contamination, seed)
     feats["ens"], feats["iforest"], feats["votes"] = ens, iforest, votes
 
+    # ---- label-free filter for LSTM training: drop actor-days that P1 flags (P1 threshold from VAL)
+    excl_windows, n_ex, n_ex_pos = None, 0, 0
+    if args.p1_filtered_train:
+        t1_pre = float(np.percentile(ens[va], P1_PCT))
+        flagged_tr = tr & (ens >= t1_pre)
+        excl_windows = set(zip(feats.loc[flagged_tr, "actorID"], feats.loc[flagged_tr, "date_s"]))
+        n_ex, n_ex_pos = int(flagged_tr.sum()), int((flagged_tr & (y == 1)).sum())  # labels: reporting only
+
     # ---- LSTM
     ev, history, vocab_size = train_and_score_lstm(df, d0, train_end, val_end, seed,
                                                    train_exclude_type=("__all__" if args.clean_train else excl),
+                                                   exclude_windows=excl_windows,
                                                    epochs=args.epochs)
     agg = aggregate_lstm(ev, val_end)
     feats = feats.merge(agg, on=["actorID", "date_s"], how="left")
@@ -480,7 +493,7 @@ def run_seed(seed, args):
     info = dict(seed=seed, profile=args.profile, n_events=len(df), n_windows=len(feats),
                 n_pos_total=int(y.sum()),
                 n_pos_train=int(y[tr].sum()), n_pos_val=int(y[va].sum()), n_pos_test=int(y[te].sum()),
-                n_test_windows=int(te.sum()), t1=t1, t2=t2, g=g_sel, vocab=vocab_size,
+                n_test_windows=int(te.sum()), n_train_excluded=n_ex, n_train_excluded_pos=n_ex_pos, t1=t1, t2=t2, g=g_sel, vocab=vocab_size,
                 lstm_epochs=len(history), lstm_best_val=min((h[2] for h in history if not np.isnan(h[2])), default=float("nan")),
                 n_days=n_days, train_end_day=train_end, val_end_day=val_end,
                 seconds=round(time.time() - t0, 1))
@@ -554,12 +567,12 @@ def write_reports(out_dir, rows, type_rows, sweep, infos, args, make_figures):
     md = ["# Summary (mean ± std over seeds)\n",
           f"profile={args.profile}  seeds={args.seeds}  days={args.days}  severity={args.severity}  "
           f"split={args.train_frac}/{args.val_frac}/{round(1 - args.train_frac - args.val_frac, 2)}  "
-          f"exclude_type={args.exclude_type} clean_train={args.clean_train}\n",
+          f"exclude_type={args.exclude_type} clean_train={args.clean_train} p1_filtered_train={args.p1_filtered_train}\n",
           "Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only "
           "(rows with protocol random-10fold-all-windows pool all windows).\n",
           to_markdown(summary[shown]), ""]
     ds = pd.DataFrame(infos)[["seed", "n_windows", "n_pos_total", "n_pos_train", "n_pos_val", "n_pos_test",
-                              "n_test_windows", "lstm_epochs", "g", "seconds"]]
+                              "n_test_windows", "n_train_excluded", "n_train_excluded_pos", "lstm_epochs", "g", "seconds"]]
     md += ["\n# Dataset per seed\n", to_markdown(ds), ""]
 
     sw = pd.DataFrame(sweep)
@@ -627,6 +640,8 @@ def main():
                    help="PyOD internal contamination; fixed (not derived from labels). Affects votes only")
     p.add_argument("--epochs", type=int, default=25)
     p.add_argument("--clean-train", action="store_true")
+    p.add_argument("--p1-filtered-train", action="store_true",
+                   help="label-free: train the LSTM without the training actor-days that P1 flags")
     p.add_argument("--exclude-type", default=None, choices=gen.ANOMALY_TYPES,
                    help="drop this anomaly type from everything fitted on (train period)")
     p.add_argument("--sanity", action="store_true", help="dataset diagnostics only, no models")
