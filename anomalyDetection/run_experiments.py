@@ -462,7 +462,7 @@ def run_seed(seed, args):
         if_label: (iforest >= ti, iforest),
         "LSTM only (p99)": (lz >= t2, lz),
         "DeepLog-style (budget-matched g)": (mr >= g_sel, mr.astype(float)),
-        "Deployed P1+P2": (p1 | p2, None),  # two-tier rule has no single score
+        "P1 + P2 (experimental sequence tier)": (p1 | p2, None),  # two-tier rule has no single score
     }
 
     # ---- supervised baselines (labels used; temporal protocol)
@@ -590,7 +590,9 @@ def write_reports(out_dir, rows, type_rows, sweep, infos, args, make_figures):
     md = ["# Summary (mean ± std over seeds)\n",
           f"profile={args.profile}  seeds={args.seeds}  days={args.days}  severity={args.severity}  "
           f"split={args.train_frac}/{args.val_frac}/{round(1 - args.train_frac - args.val_frac, 2)}  "
-          f"exclude_type={args.exclude_type} clean_train={args.clean_train} p1_filtered_train={args.p1_filtered_train} p1_pct={args.p1_pct} select_pct={args.select_pct}\n",
+          f"exclude_type={args.exclude_type} clean_train={args.clean_train} p1_filtered_train={args.p1_filtered_train} p1_pct={'val-selected' if args.select_pct else args.p1_pct} select_pct={args.select_pct}\n",
+          "Tier status: P1 (the ensemble) is the detector. P2 and every LSTM-based row (LSTM only, DeepLog-style, "
+          "P1 + P2) are an experimental sequence tier.\n",
           "Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only "
           "(rows with protocol random-10fold-all-windows pool all windows).\n",
           to_markdown(summary[shown]), ""]
@@ -610,7 +612,7 @@ def write_reports(out_dir, rows, type_rows, sweep, infos, args, make_figures):
             n_pos=("n_pos", "sum"), caught=("caught", "sum")).reset_index()
         tym["recall"] = (tym["caught"] / tym["n_pos"]).round(3)
         tym.to_csv(os.path.join(out_dir, "by_type_pooled.csv"), index=False)
-        keep = tym[tym["method"].isin(["LSTM only (p99)", "Deployed P1+P2"]) | tym["method"].str.startswith("P1 (ensemble")
+        keep = tym[tym["method"].isin(["LSTM only (p99)", "P1 + P2 (experimental sequence tier)"]) | tym["method"].str.startswith("P1 (ensemble")
                    | tym["method"].str.startswith("DeepLog") | tym["method"].str.startswith("Supervised LR (train")]
         md += ["\n# Recall by anomaly type (test windows pooled over seeds)\n", to_markdown(keep), ""]
 

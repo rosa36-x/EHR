@@ -5,6 +5,13 @@ All files here are additive. The original scripts (`generate_synthetic_audit_dat
 `priority_tagging.py`, `compute_detection_metrics.py`) are unchanged, so the
 Table V pipeline still runs exactly as before.
 
+## Tier status
+
+**P1 (the five-detector ensemble) is the detector.** P2 and every LSTM-based method (LSTM only, DeepLog-style,
+P1 + P2) are an **experimental sequence tier**: under realistic, contaminated training data they add false positives
+for little recall (see `results/`). Result tables label the combined row "P1 + P2 (experimental sequence tier)".
+Their usefulness depends on vetted training data (see the clean-training and P1-filtered ablations).
+
 ## Run
 
 ```bash
