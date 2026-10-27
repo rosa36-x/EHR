@@ -14,7 +14,7 @@ Protocol (the answer to "where were the percentiles fitted?")
     An actor-day lies wholly inside one split, so there is no straddling.
   * Seeds: generator seed = model seed = each value of --seeds. torch/numpy/random
     are seeded. LSTM checkpoints are kept in memory (no files).
-  * P1 = ensemble score >= p97 of VAL scores. P2 = LSTM max-z >= p99 of VAL
+  * P1 = ensemble score >= p97 of VAL scores (or the percentile chosen on VAL with --select-pct). P2 = LSTM max-z >= p99 of VAL
     scores (and not P1). Deployed system = P1 or P2.
   * Every method reports counts AND rates: flags, TP, FP, FN, precision, recall,
     F1, flags per 1000 windows, and the precision ceiling n_pos/flags (the
@@ -183,6 +183,22 @@ def make_builders(contamination, seed):
         "ocsvm": lambda: OCSVM(contamination=contamination),
         "hbos": lambda: HBOS(contamination=contamination),
     }
+
+
+def select_p1_pct(ens, y, va, grid=None, beta=2.0):
+    """Pick the P1 percentile that maximises F-beta on the VALIDATION split (beta=2 weights recall
+    twice as heavily as precision). Ties go to the higher percentile. Test is never used."""
+    grid = SWEEP_PCTS if grid is None else grid
+    best = None
+    for pct in grid:
+        fl = ens[va] >= np.percentile(ens[va], pct)
+        tp = int((fl & y[va]).sum()); fp = int(fl.sum()) - tp; fn = int(y[va].sum()) - tp
+        pr = tp / (tp + fp) if tp + fp else 0.0
+        rc = tp / (tp + fn) if tp + fn else 0.0
+        f = (1 + beta ** 2) * pr * rc / (beta ** 2 * pr + rc) if pr + rc else 0.0
+        if best is None or (f, pct) > (best[0], best[1]):
+            best = (f, pct)
+    return best[1], best[0]
 
 
 def run_ensemble(feats, fit_mask, contamination, seed):
@@ -402,10 +418,17 @@ def run_seed(seed, args):
     ens, iforest, votes = run_ensemble(feats, fit_mask, args.contamination, seed)
     feats["ens"], feats["iforest"], feats["votes"] = ens, iforest, votes
 
+    # ---- P1 percentile: fixed (--p1-pct) or selected on VAL by F2 (--select-pct)
+    p1_pct, sel_f2 = float(args.p1_pct), float("nan")
+    if args.select_pct:
+        p1_pct, sel_f2 = select_p1_pct(ens, y, va)
+    p1_label = "P1 (ensemble, val-selected)" if args.select_pct else f"P1 (ensemble p{p1_pct:g})"
+    if_label = "IForest only (val-selected pct)" if args.select_pct else f"IForest only (p{p1_pct:g})"
+
     # ---- label-free filter for LSTM training: drop actor-days that P1 flags (P1 threshold from VAL)
     excl_windows, n_ex, n_ex_pos = None, 0, 0
     if args.p1_filtered_train:
-        t1_pre = float(np.percentile(ens[va], P1_PCT))
+        t1_pre = float(np.percentile(ens[va], p1_pct))
         flagged_tr = tr & (ens >= t1_pre)
         excl_windows = set(zip(feats.loc[flagged_tr, "actorID"], feats.loc[flagged_tr, "date_s"]))
         n_ex, n_ex_pos = int(flagged_tr.sum()), int((flagged_tr & (y == 1)).sum())  # labels: reporting only
@@ -422,11 +445,11 @@ def run_seed(seed, args):
     lz, mr = feats["lstm_z"].values, feats["max_rank"].values
 
     # ---- thresholds: VAL only
-    t1 = float(np.percentile(ens[va], P1_PCT))
-    ti = float(np.percentile(iforest[va], P1_PCT))
+    t1 = float(np.percentile(ens[va], p1_pct))
+    ti = float(np.percentile(iforest[va], p1_pct))
     lz_val = lz[va & np.isfinite(lz)]
     t2 = float(np.percentile(lz_val, P2_PCT)) if len(lz_val) else np.inf
-    budget = 1.0 - P1_PCT / 100.0
+    budget = 1.0 - p1_pct / 100.0
     # DeepLog's g: pick the g whose VAL flag rate is closest to P1's budget
     # (ties -> smaller g), so the comparison is at an equal flag budget.
     g_sel = min(G_GRID, key=lambda g_: (abs((mr[va] >= g_).mean() - budget), g_))
@@ -434,9 +457,9 @@ def run_seed(seed, args):
     p1 = ens >= t1
     p2 = (lz >= t2) & ~p1
     flags = {
-        "P1 (ensemble p97)": (p1, ens),
+        p1_label: (p1, ens),
         "Votes>=4 (legacy rule)": (votes >= 4, None),
-        "IForest only (p97)": (iforest >= ti, iforest),
+        if_label: (iforest >= ti, iforest),
         "LSTM only (p99)": (lz >= t2, lz),
         "DeepLog-style (budget-matched g)": (mr >= g_sel, mr.astype(float)),
         "Deployed P1+P2": (p1 | p2, None),  # two-tier rule has no single score
@@ -493,7 +516,7 @@ def run_seed(seed, args):
     info = dict(seed=seed, profile=args.profile, n_events=len(df), n_windows=len(feats),
                 n_pos_total=int(y.sum()),
                 n_pos_train=int(y[tr].sum()), n_pos_val=int(y[va].sum()), n_pos_test=int(y[te].sum()),
-                n_test_windows=int(te.sum()), n_train_excluded=n_ex, n_train_excluded_pos=n_ex_pos, t1=t1, t2=t2, g=g_sel, vocab=vocab_size,
+                n_test_windows=int(te.sum()), n_train_excluded=n_ex, n_train_excluded_pos=n_ex_pos, p1_pct=p1_pct, sel_val_f2=sel_f2, t1=t1, t2=t2, g=g_sel, vocab=vocab_size,
                 lstm_epochs=len(history), lstm_best_val=min((h[2] for h in history if not np.isnan(h[2])), default=float("nan")),
                 n_days=n_days, train_end_day=train_end, val_end_day=val_end,
                 seconds=round(time.time() - t0, 1))
@@ -567,12 +590,12 @@ def write_reports(out_dir, rows, type_rows, sweep, infos, args, make_figures):
     md = ["# Summary (mean ± std over seeds)\n",
           f"profile={args.profile}  seeds={args.seeds}  days={args.days}  severity={args.severity}  "
           f"split={args.train_frac}/{args.val_frac}/{round(1 - args.train_frac - args.val_frac, 2)}  "
-          f"exclude_type={args.exclude_type} clean_train={args.clean_train} p1_filtered_train={args.p1_filtered_train}\n",
+          f"exclude_type={args.exclude_type} clean_train={args.clean_train} p1_filtered_train={args.p1_filtered_train} p1_pct={args.p1_pct} select_pct={args.select_pct}\n",
           "Thresholds, min-max ranges and LSTM stats fit on VAL; metrics on TEST only "
           "(rows with protocol random-10fold-all-windows pool all windows).\n",
           to_markdown(summary[shown]), ""]
     ds = pd.DataFrame(infos)[["seed", "n_windows", "n_pos_total", "n_pos_train", "n_pos_val", "n_pos_test",
-                              "n_test_windows", "n_train_excluded", "n_train_excluded_pos", "lstm_epochs", "g", "seconds"]]
+                              "n_test_windows", "n_train_excluded", "n_train_excluded_pos", "p1_pct", "lstm_epochs", "g", "seconds"]]
     md += ["\n# Dataset per seed\n", to_markdown(ds), ""]
 
     sw = pd.DataFrame(sweep)
@@ -587,7 +610,7 @@ def write_reports(out_dir, rows, type_rows, sweep, infos, args, make_figures):
             n_pos=("n_pos", "sum"), caught=("caught", "sum")).reset_index()
         tym["recall"] = (tym["caught"] / tym["n_pos"]).round(3)
         tym.to_csv(os.path.join(out_dir, "by_type_pooled.csv"), index=False)
-        keep = tym[tym["method"].isin(["P1 (ensemble p97)", "LSTM only (p99)", "Deployed P1+P2"])
+        keep = tym[tym["method"].isin(["LSTM only (p99)", "Deployed P1+P2"]) | tym["method"].str.startswith("P1 (ensemble")
                    | tym["method"].str.startswith("DeepLog") | tym["method"].str.startswith("Supervised LR (train")]
         md += ["\n# Recall by anomaly type (test windows pooled over seeds)\n", to_markdown(keep), ""]
 
@@ -639,6 +662,9 @@ def main():
     p.add_argument("--contamination", type=float, default=0.05,
                    help="PyOD internal contamination; fixed (not derived from labels). Affects votes only")
     p.add_argument("--epochs", type=int, default=25)
+    p.add_argument("--p1-pct", type=float, default=P1_PCT, help="P1 (and IForest-only) percentile of VAL scores; default 97")
+    p.add_argument("--select-pct", action="store_true",
+                   help="choose the P1 percentile on VAL by F2 (recall weighted 2x); overrides --p1-pct")
     p.add_argument("--clean-train", action="store_true")
     p.add_argument("--p1-filtered-train", action="store_true",
                    help="label-free: train the LSTM without the training actor-days that P1 flags")

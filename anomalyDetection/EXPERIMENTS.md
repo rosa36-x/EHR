@@ -95,3 +95,13 @@ Trains the LSTM (and so P2 and the DeepLog-style rule) without the training acto
 (threshold = p97 of validation scores; no labels used). Labels are used only to report how many positives the
 filter removed (`n_train_excluded_pos` in `dataset_per_seed.csv`). Purpose: test whether a deployable filter
 recovers the clean-training (oracle) result. The ensemble is not refit.
+
+## Choosing the P1 operating point (`--select-pct`, `--p1-pct`)
+
+`--p1-pct X` fixes the P1 percentile (default 97; Isolation Forest-only and the DeepLog-style flag budget follow it).
+`--select-pct` instead picks the percentile from {90, 93, 95, 97, 98, 99, 99.5} that maximises F2 (recall weighted twice
+as heavily as precision) on the VALIDATION split, ties to the higher percentile, so the test split is never used to
+choose the operating point. The chosen value is recorded per seed (`p1_pct` in `dataset_per_seed.csv`). The full sweep is
+still reported. Labels `P1 (ensemble, val-selected)` and `IForest only (val-selected pct)` replace the p97 labels in this mode.
+The DeepLog-style `g` is the grid value whose validation flag rate is closest to P1's budget; the grid is coarse, so its
+flag count can differ from P1's. LSTM-only stays at p99.
