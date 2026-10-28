@@ -8,6 +8,10 @@
  * fresh via HTTP would generate a random actorID we can't predict ahead of
  * time). Idempotent: upserts, safe to re-run.
  *
+ * Flags mirror what the deployed pipeline produces: P1_high_confidence (alert tier, ensemble
+ * score above the calibrated threshold, ifScore in the P1 range) and, for one case, an ADVISORY
+ * P2_sequence_candidate (experimental LSTM tier: no clarification requested, actor never notified).
+ *
  * Run: node seed_test_anomaly_flags.js
  */
 import bcrypt from "bcrypt";
@@ -40,9 +44,9 @@ async function upsertFlag(flagID, overrides = {}) {
             actorRole: "org_actor",
             actorOrg: "PharmacyMSP",
             date: new Date().toISOString().slice(0, 10),
-            ifScore: 0.5,
-            lstmScore: null,
-            combinedScore: 0.5,
+            ifScore: 0.9,          // above the P1 threshold (calibrated scores top out near 1.0)
+            lstmScore: null,       // P1-only deployment: LSTM tier off
+            combinedScore: 0.9,
             priority: "P1_high_confidence",
             topFeatures: [{ feature: "off_hours_ratio", contribution: 0.2 }],
             classification: "point",
@@ -81,9 +85,22 @@ async function main() {
         reviewedAt: new Date().toISOString(),
     });
 
+    // Owned by ACTOR_1, EXPERIMENTAL P2 (advisory): never requests a clarification, so /respond
+    // must 400 even though the flag is PENDING and owned by the caller.
+    await upsertFlag("TESTFLAGP2ADVISORY", {
+        priority: "P2_sequence_candidate",
+        classification: "sequential",
+        ifScore: 0.2,
+        lstmScore: 6.2,
+        combinedScore: 6.2,
+        clarificationRequested: false,
+        status: "PENDING",
+    });
+
     console.log("Seeded: ACTOR_1 (%s), ACTOR_2 (%s), password '%s'", ACTOR_1.phone, ACTOR_2.phone, PASSWORD);
     console.log("Seeded flags: TESTFLAGCLARIFY (PENDING, clarification open), "
-        + "TESTFLAGNOCLARIFY (PENDING, no clarification), TESTFLAGREVIEWED (CONFIRMED).");
+        + "TESTFLAGNOCLARIFY (PENDING, no clarification), TESTFLAGREVIEWED (CONFIRMED), "
+        + "TESTFLAGP2ADVISORY (PENDING, experimental P2, advisory).");
     process.exit(0);
 }
 

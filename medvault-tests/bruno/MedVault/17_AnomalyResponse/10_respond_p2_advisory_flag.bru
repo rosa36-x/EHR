@@ -1,0 +1,33 @@
+meta {
+  name: Respond to an experimental P2 (advisory) flag -> 400, no clarification requested
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/anomalies/TESTFLAGP2ADVISORY/respond
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{anomaly_actor1_token}}
+}
+
+body:json {
+  {
+    "text": "Trying to respond to an advisory flag."
+  }
+}
+
+tests {
+  test("status 400", function() {
+    expect(res.status).to.equal(400);
+  });
+  test("FAILED status", function() {
+    expect(res.body.status).to.equal("FAILED");
+  });
+  test("reason is that no clarification was requested", function() {
+    expect(res.body.message).to.include("No clarification was requested");
+  });
+}

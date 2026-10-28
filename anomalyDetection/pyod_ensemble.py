@@ -1,4 +1,8 @@
 """
+LEGACY (reproduces the old Table V only; per-actor split, min-max over all rows incl. held-out).
+The deployed detector is p1_detector.py -- the backend and retrain_pipeline.sh no longer call this file.
+
+
 pyod_ensemble.py
 
 Fits 5 PyOD anomaly detectors (PCA, KNN, IForest, OCSVM, HBOS) on the

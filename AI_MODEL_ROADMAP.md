@@ -10,13 +10,15 @@ human triggers the actual enforcement call.
 
 ## Current AI Model Architecture (as deployed)
 
-Three stages, in order: **5-model PyOD ensemble** → **LSTM sequence
-model** → **two-tier priority tagging**. Trained via a separate weekly
-batch job, scored live every worker cycle with no refitting. Full
+**Deployed detector (P1): 5-model PyOD ensemble** (`p1_detector.py`).
+An **experimental sequence tier (P2): LSTM** + `priority_tagging.py` exists
+but is OFF by default (`ANOMALY_ENABLE_P2`) and advisory only. Trained via
+a separate batch job (`retrain_pipeline.sh`), scored live every worker
+cycle with no refitting. Full
 rationale/benchmarking trail is in `AI_MODEL_EVALUATION_NOTES.md`; this
 section is the architecture summary.
 
-### Stage 1 — 5-model PyOD ensemble (`pyod_ensemble.py`)
+### Stage 1 — P1: 5-model PyOD ensemble (`p1_detector.py`) — DEPLOYED
 
 Runs on per-actor-day AGGREGATE features (`feature_engineering.py`):
 `access_frequency`, `distinct_resources_touched`, `off_hours_ratio`,
@@ -36,7 +38,10 @@ than redundant:
 
 Each model's `decision_function` output is min-max normalized, then
 **equal-weighted averaged** into one continuous `anomaly_score` — the
-actual signal used downstream. A `votes` column (how many of the 5
+actual signal used downstream. Training fits scaler + detectors on the
+first 60% of the history window by day; min-max ranges and the P1
+threshold (p95 of the scores) come from the remaining, unlabelled days.
+No labels are read. A `votes` column (how many of the 5
 independently flag a row) is also computed but is reporting-only, not
 decisive (checked directly: percentile-on-score beat vote-count as the
 actual threshold rule).
@@ -45,7 +50,7 @@ actual threshold rule).
 concept of event order — confirmed empirically to unanimously miss 100%
 of sequence/order-type anomalies. This is why Stage 2 exists.
 
-### Stage 2 — LSTM sequence model (`lstm_sequence_model.py`)
+### Stage 2 — P2: LSTM sequence model (`lstm_sequence_model.py`) — EXPERIMENTAL, off by default
 
 Per-actor next-event-prediction model (unsupervised, no labels used in
 training). Each event becomes a token of `(actorRole, action,
@@ -63,7 +68,12 @@ scored for correct history, but only the actual new scan window is
 reported (`--report-since`). Mitigates, doesn't eliminate, the
 cold-start-every-run issue (see "LSTM Persistent State" below).
 
-### Stage 3 — Two-tier priority tagging (`priority_tagging.py`)
+**Status:** under the leakage-free evaluation the LSTM reaches recall 0.14
+(precision 0.25) because its training window is contaminated with the
+anomalies; P1 + P2 adds ~0.007 recall to P1. Treat it as a research
+component, see `docs/AI_MODEL_EVALUATION_NOTES.md`.
+
+### Stage 3 — Tier tagging (`priority_tagging.py`, only when P2 is enabled)
 
 Combines Stage 1 + Stage 2 via **independent thresholds, not a weighted
 blend** — a linear blend was tested and found to suppress LSTM's signal
@@ -71,23 +81,23 @@ specifically on the sequence-type cases it exists for (checked directly:
 LSTM alone recovered far more sequence anomalies at the same percentile
 bar than any blended weighting did).
 
-- **P1 (`P1_high_confidence`):** ensemble `anomaly_score` ≥ its own p97
-  threshold (from training data, not recomputed live).
-- **P2 (`P2_sequence_candidate`):** LSTM `max_z_surprisal` ≥ its own p99
-  threshold, excluding anything already in P1 (dedup, P1 wins).
+- **P1 (`P1_high_confidence`) — alert tier:** ensemble score ≥ the
+  calibrated P1 threshold (p95 of the calibration window; precision ≈0.80,
+  recall ≈0.70 on the synthetic benchmark). Creates a flag, notifies the
+  actor and requests a clarification for the actor's first two P1 flags.
+- **P2 (`P2_sequence_candidate`) — experimental, advisory:** LSTM
+  `max_z_surprisal` ≥ its own p99, excluding anything already in P1. Flags
+  are visible to Governance only: no actor notification, no clarification
+  request, not counted in the clarification quota.
 
-P1 and P2 are intentionally NOT uniform-precision — P1 is the
-higher-confidence tier (~0.5 precision), P2 is a deliberately
-lower-confidence "worth a quick check" tier (~0.3 precision) that exists
-specifically to surface the sequence-type cases P1 can never catch.
-Surface these as separate queues to reviewers, not one undifferentiated
-flagged list.
+Surface the tiers as separate queues to reviewers, never as one flagged list.
 
 ### Train / score split + scheduling
 
-- `--mode train`: fits fresh on a large historical window, saves
-  scaler/models/vocab/thresholds to `anomalyDetection/models/`.
-- `--mode score`: loads those saved artifacts, scores new data, **no
+- `p1_detector.py train`: fits on a large historical window, saves
+  `models/p1_ensemble.joblib` and `models/thresholds.json`
+  (`lstm_model.pt` too with `retrain_pipeline.sh --with-p2`).
+- `p1_detector.py score`: loads the artifact, scores new data, **no
   refitting**. This is all the live worker (`anomalyWorker.js`) ever
   calls — it will refuse to run if artifacts are missing.
 - **Retraining is a separate weekly batch job**, not something the
@@ -99,7 +109,7 @@ flagged list.
   The wrapper activates the venv and sets `MONGO_URI` (cron runs without
   an interactive shell, so these aren't inherited automatically), then
   calls `retrain_pipeline.sh`, which exports historical
-  `AuditLogMirror` data, retrains both models, and writes
+  `AuditLogMirror` data, retrains P1, and writes
   `models/thresholds.json` for the live worker to pick up on its next
   cycle (no restart needed).
 
@@ -115,14 +125,12 @@ flagged list.
   `POST /anomalies/:id/respond` in `routes/anomalyResponse.js`).
 - Standalone paper figures (`generate_paper_figures.py`): score
   distribution, feature importance, PR/ROC, LSTM loss curve.
-- **5-model PyOD ensemble** (replacing solo Isolation Forest) + **LSTM,
-  combined via a two-tier priority system** (P1 high-confidence /
-  P2 sequence-candidate), both live in `anomalyWorker.js` -- see
-  `AI_MODEL_EVALUATION_NOTES.md`'s "5-Model Ensemble + Two-Tier Priority
-  System" section for the full selection/combining rationale.
-  `sequential` classification is now LIVE (P2 tier), not deferred.
-- **Train/score split**: `pyod_ensemble.py`/`lstm_sequence_model.py`
-  support `--mode train` (batch, `retrain_pipeline.sh`) vs `--mode score`
+- **P1: 5-model PyOD ensemble** (replacing solo Isolation Forest), live
+  in `anomalyWorker.js` as the alert tier. **P2: LSTM** is experimental
+  and off by default (`ANOMALY_ENABLE_P2`); `sequential` classification
+  is only produced by it. See `AI_MODEL_EVALUATION_NOTES.md`.
+- **Train/score split**: `p1_detector.py` (and `lstm_sequence_model.py`
+  for P2) support train (batch, `retrain_pipeline.sh`) vs score
   (live worker, no refitting). Fixes the original design's "refit from
   scratch every hourly cycle on a tiny window" problem.
 - **LSTM rolling context window**: live scoring pulls extra history

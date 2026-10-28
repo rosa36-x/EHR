@@ -13,8 +13,8 @@ const execFileAsync = promisify(execFile);
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-// Directory containing generate_synthetic_audit_data.py / feature_engineering.py /
-// isolation_forest_baseline.py. This is a subprocess call to the existing CLI
+// Directory containing feature_engineering.py / p1_detector.py (and, only when
+// ANOMALY_ENABLE_P2=true, lstm_sequence_model.py / priority_tagging.py). This is a subprocess call to the existing CLI
 // scripts, not a REST call to a "small Python model service" — that service is
 // still future work per AI_MODEL_ROADMAP.md. This is the pragmatic wiring for
 // now; swap execFileAsync calls below for an HTTP call if/when that service
@@ -39,16 +39,26 @@ const SCAN_WINDOW_HOURS = Number(process.env.ANOMALY_SCAN_WINDOW_HOURS ?? 24);
 // score_new() docstring.
 const LSTM_CONTEXT_LOOKBACK_DAYS = Number(process.env.ANOMALY_LSTM_LOOKBACK_DAYS ?? 14);
 
-// P97/P99 percentile thresholds are no longer computed live -- they're
-// fixed values written to thresholds.json by retrain_pipeline.sh (a batch
-// job, run separately from this worker) and loaded by priority_tagging.py
-// via --thresholds-in. Recomputing a percentile from this worker's own
-// small SCAN_WINDOW_HOURS pull would be statistically meaningless. Models
-// themselves are also no longer refit every cycle -- pyod_ensemble.py and
-// lstm_sequence_model.py run in --mode score, loading what
-// retrain_pipeline.sh already fit and saved here.
+// ── Tiers ────────────────────────────────────────────────────────────────────
+// P1 (ensemble, p1_detector.py) is the DEPLOYED DETECTOR: it is the only tier that
+// raises alerts (flag + clarification request + actor notification). Its threshold
+// is a percentile of a later, unlabelled calibration window, written by
+// retrain_pipeline.sh into models/p1_ensemble.joblib and thresholds.json; nothing is
+// recomputed from this worker's small rolling window.
+//
+// P2 (LSTM sequence tier) is EXPERIMENTAL and OFF by default. In the evaluation it adds
+// < 0.02 recall over P1 at the cost of extra reviewer load (anomalyDetection/EXPERIMENTS.md).
+// With ANOMALY_ENABLE_P2=true it still runs, but its flags are ADVISORY: stored for
+// Governance to look at, never notify the actor, never request a clarification, and
+// never count toward the clarification quota. Bans stay gated on CONFIRMED review.
 const MODEL_DIR = process.env.ANOMALY_MODEL_DIR
     ?? path.join(PYTHON_DIR, "models");
+export const P1_PRIORITY = "P1_high_confidence";
+export const P2_PRIORITY = "P2_sequence_candidate";
+// Read at call time (not import time) so the setting is testable and cannot go stale.
+export function isP2Enabled() {
+    return String(process.env.ANOMALY_ENABLE_P2 ?? "false").toLowerCase() === "true";
+}
 
 // Confirmed (Governance-reviewed, not raw ML) flags within this rolling
 // window before an OrgActor gets temporarily banned. Deliberately gated on
@@ -58,7 +68,7 @@ const BAN_THRESHOLD_CONFIRMED_FLAGS = Number(process.env.ANOMALY_BAN_THRESHOLD ?
 const BAN_DURATION_DAYS = Number(process.env.ANOMALY_BAN_DURATION_DAYS ?? 7);
 const COMPLIANCE_REPORT_EMAIL = process.env.COMPLIANCE_REPORT_EMAIL ?? "compliance@medvault.local";
 
-// Violations 1-2 (this actor's 1st/2nd AnomalyFlag ever, any status) get a
+// Violations 1-2 (this actor's 1st/2nd P1 AnomalyFlag ever, any status) get a
 // clarification request instead of just a warning. Counted against ALL
 // flags (not just CONFIRMED) because this happens at creation time, before
 // any human review -- it's "give them a chance to explain" not "punish
@@ -151,8 +161,8 @@ async function resolveActorContact(actorID, actorRole) {
  * Adversary 4 (Emergency Abuse) cross-check. "point" is the default for
  * every flag; this only upgrades it to "emergency_abuse" when the flagged
  * actor had an emergency-access episode overlapping the flagged actor-day.
- * A flag only exists here because the IF score already crossed
- * FLAG_THRESHOLD -- this doesn't add new detection sensitivity, it labels
+ * A flag only exists here because the P1 ensemble score already crossed
+ * its calibrated threshold -- this doesn't add new detection sensitivity, it labels
  * *why* an already-anomalous day matters more: an anomalous access pattern
  * that happened to fall inside a self-declared "emergency" is exactly the
  * pattern-vs-declared-reason mismatch the spec's Adversary 4 describes, and
@@ -182,17 +192,19 @@ async function classifyFlag(actorID, date) {
 
 /**
  * Pulls the last SCAN_WINDOW_HOURS of AuditLogMirror data, runs it through
- * feature_engineering.py + pyod_ensemble.py + lstm_sequence_model.py +
- * priority_tagging.py, and creates a PENDING AnomalyFlag (+ on-chain
- * ANOMALY_FLAGGED audit entry + warning notification) for every actor-day
- * with priority P1 or P2 that doesn't already have one.
+ * feature_engineering.py + p1_detector.py, and creates a PENDING AnomalyFlag
+ * (+ on-chain ANOMALY_FLAGGED audit entry + warning notification) for every
+ * P1 actor-day that doesn't already have one. With ANOMALY_ENABLE_P2=true the
+ * experimental LSTM tier also runs and adds ADVISORY P2 flags (no actor
+ * notification, no clarification request).
  *
  * Also logs the detection run itself as an audited "ai_engine" access --
  * this is the AI reading patient-derived data to make a prediction, and
  * that access deserves the same trail as any other actor's, same as any
  * other AI model (disease predictors, etc.) that reads this data should.
  */
-export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") {
+export async function runDetectionCycle(modelVersion = "p1_ensemble_v3") {
+    const ENABLE_P2 = isP2Enabled();
     const runID = generateID("anomalyFlag") + "-run";
     const since = new Date(Date.now() - SCAN_WINDOW_HOURS * 3600 * 1000).toISOString();
 
@@ -211,16 +223,18 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
         return { flagsCreated: 0 };
     }
 
-    // Extra lookback for LSTM CONTEXT ONLY -- the ensemble's feature_engineering.py
-    // input stays on the narrow `since` window (aggregate daily features don't need
-    // history). Only fetched once we know there's actually new data to score, since
-    // it's a second, larger query. --report-since (below) tells lstm_sequence_model.py
-    // to score this whole range (correct autoregressive context) but only return
-    // actor-days on or after `since` -- see its score_new() docstring.
+    // Extra lookback for LSTM CONTEXT ONLY (experimental P2 tier) -- the P1
+    // ensemble's feature_engineering.py input stays on the narrow `since` window
+    // (aggregate daily features don't need history). Fetched only when P2 is on.
+    // --report-since (below) tells lstm_sequence_model.py to score this whole range
+    // (correct autoregressive context) but only return actor-days on or after `since`.
     const contextSince = new Date(Date.now() - LSTM_CONTEXT_LOOKBACK_DAYS * 24 * 3600 * 1000).toISOString();
-    const contextEvents = await AuditLogMirror.find({ timestamp: { $gte: contextSince } }).lean();
+    const contextEvents = ENABLE_P2
+        ? await AuditLogMirror.find({ timestamp: { $gte: contextSince } }).lean()
+        : [];
 
-    const requiredArtifacts = ["pyod_ensemble_model.joblib", "lstm_model.pt", "thresholds.json"];
+    const requiredArtifacts = ["p1_ensemble.joblib", "thresholds.json"];
+    if (ENABLE_P2) requiredArtifacts.push("lstm_model.pt");
     const missing = requiredArtifacts.filter((f) => !fs.existsSync(path.join(MODEL_DIR, f)));
     if (missing.length > 0) {
         console.error(`[Anomaly] Missing model artifacts in ${MODEL_DIR}: ${missing.join(", ")}. `
@@ -239,7 +253,7 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
     try {
         const columns = ["auditID", "actorID", "actorRole", "actorOrg", "action", "resourceType", "resourceID", "timestamp"];
         fs.writeFileSync(rawPath, toCSV(events, columns));
-        fs.writeFileSync(rawContextPath, toCSV(contextEvents, columns));
+        if (ENABLE_P2) fs.writeFileSync(rawContextPath, toCSV(contextEvents, columns));
 
         await execFileAsync(PYTHON_BIN, [
             path.join(PYTHON_DIR, "feature_engineering.py"),
@@ -249,47 +263,54 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
         ]);
 
         await execFileAsync(PYTHON_BIN, [
-            path.join(PYTHON_DIR, "pyod_ensemble.py"),
+            path.join(PYTHON_DIR, "p1_detector.py"),
+            "score",
             "--in", featuresPath,
             "--out", scoredPath,
-            "--mode", "score",
-            "--model-in", path.join(MODEL_DIR, "pyod_ensemble_model.joblib"),
+            "--model-in", path.join(MODEL_DIR, "p1_ensemble.joblib"),
         ]);
 
-        // LSTM runs against the RAW event log (needs actual timestamps/order),
-        // not the aggregated featuresPath. No "label" column on real data --
-        // lstm_sequence_model.py falls back to "unknown" for that (see fix).
-        await execFileAsync(PYTHON_BIN, [
-            path.join(PYTHON_DIR, "lstm_sequence_model.py"),
-            "--in", rawContextPath,
-            "--out", lstmPath,
-            "--mode", "score",
-            "--model-in", path.join(MODEL_DIR, "lstm_model.pt"),
-            "--report-since", since,
-        ]);
+        let resultPath = scoredPath; // P1-only: p1_detector.py already writes `priority`
 
-        await execFileAsync(PYTHON_BIN, [
-            path.join(PYTHON_DIR, "priority_tagging.py"),
-            "--ensemble-in", scoredPath,
-            "--lstm-in", lstmPath,
-            "--out", priorityPath,
-            "--thresholds-in", path.join(MODEL_DIR, "thresholds.json"),
-        ]);
+        if (ENABLE_P2) {
+            // EXPERIMENTAL sequence tier. LSTM runs against the RAW event log (needs actual
+            // timestamps/order), not the aggregated featuresPath.
+            await execFileAsync(PYTHON_BIN, [
+                path.join(PYTHON_DIR, "lstm_sequence_model.py"),
+                "--in", rawContextPath,
+                "--out", lstmPath,
+                "--mode", "score",
+                "--model-in", path.join(MODEL_DIR, "lstm_model.pt"),
+                "--report-since", since,
+            ]);
 
-        const scoredRows = parseCSV(fs.readFileSync(priorityPath, "utf8"));
+            // thresholds.json carries ensemble_threshold == the P1 threshold, so P1 membership
+            // here is identical to the P1-only path; priority_tagging only adds the P2 tier.
+            await execFileAsync(PYTHON_BIN, [
+                path.join(PYTHON_DIR, "priority_tagging.py"),
+                "--ensemble-in", scoredPath,
+                "--lstm-in", lstmPath,
+                "--out", priorityPath,
+                "--thresholds-in", path.join(MODEL_DIR, "thresholds.json"),
+            ]);
+            resultPath = priorityPath;
+        }
+
+        const scoredRows = parseCSV(fs.readFileSync(resultPath, "utf8"));
         let flagsCreated = 0;
 
         for (const row of scoredRows) {
-            if (row.priority === "none") continue;
+            if (row.priority !== P1_PRIORITY && row.priority !== P2_PRIORITY) continue;
+            if (row.priority === P2_PRIORITY && !ENABLE_P2) continue;
+            const isP1 = row.priority === P1_PRIORITY;
 
-            const ensembleScore = Number(row.ensemble_score);
+            const ensembleScore = Number(row.ensemble_score ?? row.anomaly_score);
             const lstmScore = row.lstm_score !== undefined && row.lstm_score !== ""
                 ? Number(row.lstm_score) : null;
             // P1 is driven by the ensemble score, P2 by LSTM's -- this is
-            // NOT a weighted blend, each tier fires on its own threshold
-            // (see priority_tagging.py). combinedScore records whichever
-            // score actually drove this flag's tier, for display purposes.
-            const combinedScore = row.priority === "P1_high_confidence" ? ensembleScore : lstmScore;
+            // NOT a weighted blend, each tier fires on its own threshold.
+            // combinedScore records whichever score actually drove this flag.
+            const combinedScore = isP1 ? ensembleScore : lstmScore;
 
             const existing = await AnomalyFlag.findOne({
                 actorID: row.actorID,
@@ -320,13 +341,16 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
             const isEmergencyOverlap = await classifyFlag(row.actorID, row.date);
             const classification = isEmergencyOverlap === "emergency_abuse"
                 ? "emergency_abuse"
-                : (row.priority === "P2_sequence_candidate" ? "sequential" : "point");
+                : (isP1 ? "point" : "sequential");
 
-            // Violations 1-2: this actor's Nth flag overall (any status),
+            // Violations 1-2: this actor's Nth P1 flag overall (any status),
             // counted BEFORE this one is saved. See CLARIFICATION_FLAG_COUNT
-            // doc comment for why this isn't gated on CONFIRMED.
-            const priorFlagCount = await AnomalyFlag.countDocuments({ actorID: row.actorID });
-            const clarificationRequested = priorFlagCount < CLARIFICATION_FLAG_COUNT;
+            // doc comment for why this isn't gated on CONFIRMED. Advisory (P2)
+            // flags neither request a clarification nor count toward the quota.
+            const priorFlagCount = isP1
+                ? await AnomalyFlag.countDocuments({ actorID: row.actorID, priority: P1_PRIORITY })
+                : 0;
+            const clarificationRequested = isP1 && priorFlagCount < CLARIFICATION_FLAG_COUNT;
 
             await new AnomalyFlag({
                 flagID,
@@ -348,7 +372,8 @@ export async function runDetectionCycle(modelVersion = "pyod_ensemble_lstm_v2") 
 
             flagsCreated++;
 
-            const contact = await resolveActorContact(row.actorID, actorRole);
+            // Advisory P2 flags are for Governance only: the actor is not contacted.
+            const contact = isP1 ? await resolveActorContact(row.actorID, actorRole) : null;
             if (contact) {
                 const reason = topFeatures.map((f) => f.feature).join(", ") || "unusual access pattern";
                 const message = clarificationRequested
@@ -462,7 +487,7 @@ async function sendAuthorityReport(actor) {
 
     const lines = confirmedFlags.map((f) => {
         const features = f.topFeatures.map((t) => `${t.feature} (${t.contribution})`).join(", ");
-        const tierLabel = f.priority === "P2_sequence_candidate" ? "P2 (sequence)" : "P1 (high-confidence)";
+        const tierLabel = f.priority === P2_PRIORITY ? "P2 (experimental, advisory)" : "P1 (alert)";
         const lstmPart = f.lstmScore != null ? `, lstm ${f.lstmScore.toFixed(3)}` : "";
         return `  - ${f.date} | ${tierLabel} | ensemble ${f.ifScore.toFixed(3)}${lstmPart} | `
             + `${features} | on-chain auditID: ${f.auditID}`;

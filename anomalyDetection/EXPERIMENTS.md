@@ -112,3 +112,21 @@ choose the operating point. The chosen value is recorded per seed (`p1_pct` in `
 still reported. Labels `P1 (ensemble, val-selected)` and `IForest only (val-selected pct)` replace the p97 labels in this mode.
 The DeepLog-style `g` is the grid value whose validation flag rate is closest to P1's budget; the grid is coarse, so its
 flag count can differ from P1's. LSTM-only stays at p99.
+
+
+## Deployment (`p1_detector.py`)
+
+The backend runs the protocol evaluated above, not the legacy scripts:
+`retrain_pipeline.sh` calls `p1_detector.py train` (fit on the first 60% of
+days, min-max ranges and the P1 percentile threshold from the rest, no
+labels), `anomalyWorker.js` calls `p1_detector.py score`. P1 is the only
+alerting tier. The LSTM/P2 path (`lstm_sequence_model.py`,
+`priority_tagging.py`) runs only with `ANOMALY_ENABLE_P2=true` and is
+advisory. `tests/test_p1_detector.py` checks that `p1_detector` and
+`run_experiments.run_ensemble` produce identical scores, that labels are
+never read, and that calibration rows move only the threshold.
+
+Legacy, not used by the backend any more: `pyod_ensemble.py`
+(train/score modes), `isolation_forest_baseline.py`,
+`compute_detection_metrics.py`, `generate_paper_figures.py` (they use the
+old per-actor split and are kept only to reproduce the old Table V).
