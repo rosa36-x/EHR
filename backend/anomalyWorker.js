@@ -16,7 +16,12 @@
  *   ANOMALY_INTERVAL_MINUTES   how often to run (default 60)
  *   ANOMALY_PYTHON_DIR         path to the anomalyDetection/ scripts
  *   ANOMALY_SCAN_WINDOW_HOURS  how far back each run looks (default 24)
- *   ANOMALY_FLAG_THRESHOLD     anomaly_score cutoff to create a flag
+ *   ANOMALY_MODEL_DIR          where retrain_pipeline.sh wrote p1_ensemble.joblib / thresholds.json
+ *   ANOMALY_ENABLE_P2          "true" to also run the EXPERIMENTAL LSTM tier (advisory flags only;
+ *                              default false -- P1 is the deployed detector)
+ *   ANOMALY_MODEL_VERSION      audit identity of the engine (default p1_ensemble_v3)
+ *
+ * The P1 threshold is not an env var: it is calibrated by retrain_pipeline.sh and read from the model dir.
  *
  * No node-cron dependency -- a plain setInterval is enough here and keeps
  * this file installable with zero new packages.
@@ -26,7 +31,7 @@ import { connectDB } from "./services/db.js";
 import { runDetectionCycle } from "./services/anomalyDetectionService.js";
 
 const INTERVAL_MINUTES = Number(process.env.ANOMALY_INTERVAL_MINUTES ?? 60);
-const MODEL_VERSION = process.env.ANOMALY_MODEL_VERSION ?? "isolation_forest_v1";
+const MODEL_VERSION = process.env.ANOMALY_MODEL_VERSION ?? "p1_ensemble_v3";
 
 async function runOnce() {
     try {

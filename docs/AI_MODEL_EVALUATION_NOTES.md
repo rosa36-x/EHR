@@ -8,7 +8,7 @@ capability roadmap.
 
 | Adversary | Mechanism | Code reference | Coverage |
 |---|---|---|---|
-| **1. Malicious Insider (valid credentials)** | 5-model PyOD ensemble (PCA/KNN/IForest/OCSVM/HBOS) over per-actor-day features: `off_hours_ratio`, `consent_denied_ratio`, `dispense_without_read_count`, cross-org access-denied bursts, combined with the LSTM sequence model via a two-tier priority system | `feature_engineering.py`, `pyod_ensemble.py`, `lstm_sequence_model.py`, `priority_tagging.py` | Detected — `P1_high_confidence` (point anomalies) + `P2_sequence_candidate` (order/sequence anomalies) |
+| **1. Malicious Insider (valid credentials)** | 5-model PyOD ensemble (PCA/KNN/IForest/OCSVM/HBOS) over per-actor-day features: `off_hours_ratio`, `consent_denied_ratio`, `dispense_without_read_count`, burst count, distinct resources, access frequency | `feature_engineering.py`, `p1_detector.py` | Detected by the deployed tier — `P1_high_confidence`. Order/sequence anomalies (~29% of injected positives) are invisible to the features; the experimental LSTM tier (`P2_sequence_candidate`, off by default) does not recover them reliably |
 | **2. Fake Treatment Relationship Attacker** | Access without an active `TreatmentRelationship` record | — | Not implemented. Assessed as feasible (data already exists via `treatment_relationship_contract.go`), scoped as future work |
 | **3. Rogue/Compromised AI Model** | `ai_entity` classification: query-rate, purpose-mismatch, unauthorized record-type tracking for AI-model actors | — | Not implemented. No AI-model-as-registered-actor identity exists in the system (ResearchMSP is a skeleton org); this is a prerequisite subsystem, not a detection feature, and is out of scope |
 | **4. Emergency Abuse Attacker** | Cross-check flagged actor-day against overlapping `EmergencyAccessLog.reason` | `classifyFlag()` in `anomalyDetectionService.js` | Detected — `emergency_abuse` classification |
@@ -16,23 +16,23 @@ capability roadmap.
 ## Limitations / Threats to Validity
 
 - **Evaluation is synthetic-only.** All precision/recall/F1 figures are
-  against `generate_synthetic_audit_data.py` output with injected, labeled
-  anomalies. No real production audit data was used for evaluation.
-- **Small evaluation scale.** ~94 actor-day windows in a single 24h scan;
-  larger-population/longer-horizon evaluation is needed for stronger
-  statistical claims.
+  against `generate_synthetic_audit_data_v2.py` output with injected, labeled
+  anomalies, 10 seeds, leakage-free chronological 60/20/20 split
+  (`anomalyDetection/run_experiments.py`, `EXPERIMENTS.md`,
+  `anomalyDetection/results/`). No real production audit data was used.
+  The earlier figures in this file (recall 0.95 / precision 0.46, p97
+  thresholds, ~94 windows) came from the old, leaky protocol and are
+  superseded.
 - **2 of 4 spec'd adversaries undetected** (see table above).
-- **LSTM is now in the live path via a two-tier priority system, not a
-  single blended score.** A linear weighted-average blend of the ensemble
-  and LSTM scores (the original `combine_scores.py` design) was found to
-  suppress LSTM's contribution specifically on sequence-type anomalies —
-  its one intended purpose — because averaging two differently-scaled
-  signals lets a model that's structurally blind to a case (the ensemble,
-  for sequence anomalies) dilute a model that isn't (LSTM). Replaced with
-  independent thresholds: P1 fires on the ensemble's own `anomaly_score`
-  percentile, P2 fires on LSTM's own `max_z_surprisal` percentile,
-  deduplicated so P1 takes precedence. See "5-Model Ensemble + Two-Tier
-  Priority System" below.
+- **P1 is the deployed detector; the LSTM tier (P2) is experimental and off
+  by default.** Under the leakage-free protocol the LSTM alone reaches
+  recall 0.14 / precision 0.25 (DeepLog-style baseline: 0.08 / 0.14), and
+  P1 + P2 adds only ~0.007 recall to P1 while costing ~18 extra flags per
+  1k windows. The cause is training contamination (anomalies sit in the
+  unlabelled training window); an oracle clean-train ablation recovers the
+  DeepLog-style model, but the label-free variant only re-detects what P1
+  already flags. P2 is therefore a ranked-review advisory list, never an
+  alert, and is future work (see "Future work" below).
 - **No adversarial red-team evaluation.** Detection quality is measured
   against injected synthetic patterns, not an adaptive adversary attempting
   evasion.
@@ -71,66 +71,67 @@ for `lstm_sequence_model.py`'s role in the pipeline: it operates on event
 sequences, covering exactly the class the aggregate-feature ensemble
 cannot see by construction, not a redundant second opinion.
 
-**Combining ensemble + LSTM:** a linear score blend (weighted average,
-one shared threshold) was tested first — a weight grid search found
-0.9 ensemble / 0.1 LSTM maximized overall AP (0.825 vs the original
-0.7/0.3's 0.818), but this difference is within noise at this dataset's
-scale (~35-81 labeled anomalies) and isn't a meaningful basis for
-changing the documented 0.7/0.3 weighting. More importantly, checking
-recall on *just* the sequence-type subset at matched thresholds showed
-the blend recovers only ~17-22% of sequence anomalies, while LSTM's own
-score alone recovers ~75% (held-out) at the same percentile bar —
-direct evidence the blend was diluting LSTM's one distinguishing signal.
+**Deployed design — P1 alerts, P2 is experimental:**
+- **P1 (`P1_high_confidence`, deployed):** ensemble score (equal-weight mean
+  of per-detector min-max scores) ≥ the p95 of the calibration-window
+  scores. The percentile is chosen on validation (F2, recall weighted 2x)
+  from {90, 93, 95, 97, 98, 99, 99.5}; it came out as 95 on all ten v2
+  seeds. Thresholds are percentiles of an unlabelled window, so the same
+  procedure runs on real data (`p1_detector.py train`). Test-split result
+  (mean ± std, 10 seeds): precision 0.80 ± 0.07, recall 0.70 ± 0.10,
+  F1 0.74 ± 0.07, ~46 flags per 1k windows.
+- **P2 (`P2_sequence_candidate`, experimental, advisory):** LSTM
+  `max_z_surprisal` ≥ its own p99, excluding P1. Off unless the worker runs
+  with `ANOMALY_ENABLE_P2=true`. P2 flags never notify the actor, never ask
+  for a clarification and do not count toward the clarification quota; they
+  exist only as a Governance-side review list. Results: P1 + P2 recall
+  0.70 vs 0.70 for P1 alone, precision 0.55 vs 0.80.
+- Not a blend: a linear ensemble/LSTM blend suppressed LSTM's signal on
+  sequence anomalies, so the tiers keep independent thresholds.
+- `votes` (how many of the 5 detectors agree) is reported for
+  interpretability only; the legacy `votes ≥ 4` rule performs similarly
+  (precision 0.84, recall 0.67) but P1 offers a tunable operating point.
 
-**Final design — two independent-threshold tiers, not a blend:**
-- **P1 (`P1_high_confidence`):** ensemble `anomaly_score` ≥ its own p97
-  threshold. (Not `votes` — checked directly: p97-on-score beat
-  `votes≥4` on held-out data, recall 0.800 vs 0.743, precision 0.509 vs
-  0.542.)
-- **P2 (`P2_sequence_candidate`):** LSTM `max_z_surprisal` ≥ its own p99
-  threshold, excluding anything already in P1. (`max_z_surprisal` beat
-  `mean_z_surprisal`/`p90_z_surprisal` at matched recall; p99 was chosen
-  over p97 to cut P2 volume ~78% and triple P2 precision at a cost of
-  3 fewer sequence catches out of 23 — an acceptable trade for a
-  lower-confidence, reviewer-facing tier.)
-- Combined held-out performance: recall 0.95, precision 0.46 on the
-  anomalous class — a meaningful improvement over the original blended
-  approach at comparable recall.
+**Recall ceiling:** ~29% of injected positives (`order_composition`,
+`bigram_violation`) are invisible to the six aggregate features, capping
+feature-based recall near 0.71; P1 reaches 0.70 of 0.71.
 
-P1 and P2 are intentionally NOT uniform-precision and should be surfaced
-to reviewers as separate queues, not one undifferentiated flagged list —
-P2 is a "worth a quick sequence-pattern check" tier, not ranked by
-urgency the way P1 is.
+See `anomalyDetection/EXPERIMENTS.md` for the protocol, baselines
+(supervised LR/SVM, DeepLog-style) and ablations (clean-train,
+P1-filtered training, percentile selection).
 
-See `pyod_ensemble.py`, `priority_tagging.py`, and their accompanying
-`check_*.py` scripts for the full benchmarking trail.
+## Future work
+
+- Make the sequence tier work: train the LSTM on data it can trust to be
+  mostly normal (reviewer-confirmed or P1-excluded windows) and re-validate
+  its threshold before enabling P2 as an alert tier.
+- Features that expose order (e.g. read-before-dispense gaps, transition
+  counts) so the aggregate tier can see `bigram_violation` and
+  `order_composition`.
+- Feed `DISMISSED`/`CONFIRMED` review outcomes back as labels for
+  recalibration.
 
 ## Reproducibility
 
 ```bash
-# 1. Generate synthetic data
+# 1. Paper numbers (leakage-free harness, 10 seeds)
 cd anomalyDetection
-python generate_synthetic_audit_data.py --out synthetic_audit_log.csv --days 14 --json
+python run_experiments.py --profile v2 --seeds 1-10 --select-pct   # see EXPERIMENTS.md for all runs
 
-# 2. Seed + score
-cd ../backend
-node seed_synthetic_audit_data.js ../anomalyDetection/synthetic_audit_log.json
-cd ../anomalyDetection
-python feature_engineering.py --in synthetic_audit_log.csv --out features.csv --patient-out patient_features.csv
-python pyod_ensemble.py --in features.csv --out scored_features.csv
-python lstm_sequence_model.py --in synthetic_audit_log.csv --out lstm_scored_actor_days.csv --loss-out lstm_loss.csv
-python priority_tagging.py --ensemble-in scored_features.csv --lstm-in lstm_scored_actor_days.csv --out prioritized_flags.csv
+# 2. Deployed path: synthetic history -> train P1 -> seed live window -> score
+python generate_synthetic_audit_data_v2.py --profile v2 --days 90 --seed 1 --out synthetic_audit_log.csv
+cd .. && ./retrain_pipeline.sh --synthetic             # writes anomalyDetection/models/{p1_ensemble.joblib,thresholds.json}
+cd anomalyDetection && python generate_synthetic_audit_data.py --out live_window.csv --days 2 --json
+cd ../backend && node seed_synthetic_audit_data.js ../anomalyDetection/live_window.json
+node anomalyWorker.js --once                           # P1 only; add ANOMALY_ENABLE_P2=true (+ retrain --with-p2) for the experimental tier
 
-# 3. Metrics + figures (used directly in the paper)
-python compute_detection_metrics.py --scored scored_features.csv
-python generate_paper_figures.py --scored scored_features.csv --lstm-loss lstm_loss.csv --out-dir figures/
-
-# 4. API-level tests
-cd ../backend && npm run db:reset && NODE_ENV=test node server.js &
+# 3. Tests
+cd ../anomalyDetection && python -m pytest tests -q    # p1_detector parity with the harness, no label/calibration leakage
+cd ../medvault-tests/jest && npm run test:unit         # includes anomalyDetectionService tier semantics
+cd ../../backend && npm run db:reset && NODE_ENV=test node server.js &
 node seed_test_anomaly_flags.js
 cd ../medvault-tests/bruno/MedVault && bru run --env <your_env>
 ```
 
-All thresholds (`FLAG_THRESHOLD=0.15`, ban/clarification thresholds) are
-environment variables with defaults matching what's reported in this paper
-— see `anomalyDetectionService.js`.
+The P1 percentile (`RETRAIN_P1_PCT`, default 95), the clarification quota
+and the ban threshold are environment variables; defaults match the paper.

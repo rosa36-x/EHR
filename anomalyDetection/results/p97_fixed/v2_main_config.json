@@ -1,0 +1,37 @@
+{
+  "args": {
+    "profile": "v2",
+    "seeds": "1-10",
+    "days": 90,
+    "n_bursts": null,
+    "severity": 1.0,
+    "train_frac": 0.6,
+    "val_frac": 0.2,
+    "contamination": 0.05,
+    "epochs": 25,
+    "clean_train": false,
+    "exclude_type": null,
+    "sanity": false,
+    "figures": true,
+    "out_dir": null
+  },
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "git_rev": "9eaf830",
+  "python": "3.11.4",
+  "platform": "Linux-6.8.0-40-generic-x86_64-with-glibc2.39",
+  "numpy": "1.26.4",
+  "pandas": "2.1.4",
+  "torch": "2.13.0+cu130",
+  "started": "2026-10-25T12:49:57"
+}

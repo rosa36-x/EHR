@@ -1,7 +1,7 @@
 import express from "express";
 import { AnomalyFlag } from "../services/db.js";
 import { authenticate, requireOrgActorOrg } from "../services/authMiddleware.js";
-import { runDetectionCycle, reviewFlag } from "../services/anomalyDetectionService.js";
+import { runDetectionCycle, reviewFlag, isP2Enabled } from "../services/anomalyDetectionService.js";
 
 const router = express.Router();
 
@@ -34,10 +34,14 @@ router.get("/", async (req, res) => {
  *   - byStatus: counts for a PENDING/CONFIRMED/DISMISSED breakdown (pie/donut)
  *   - byDay: flags created per day, last 30 days (trend line)
  *   - topActors: actors with the most CONFIRMED flags (bar chart)
- *   - scoreDistribution: bucketed ifScore (ensemble anomaly_score) histogram
- *   - byPriority: P1_high_confidence vs P2_sequence_candidate counts -- see
- *     priority_tagging.py; P2 is the lower-confidence, LSTM-driven tier and
- *     should be shown/labeled separately, not folded into one flagged count
+ *   - scoreDistribution: bucketed ifScore (P1 ensemble score, min-max scaled on the
+ *     calibration window; the P1 threshold sits near the top of this range and
+ *     scores above 1.0 are possible) histogram
+ *   - byPriority: P1_high_confidence vs P2_sequence_candidate counts. P1 is the
+ *     deployed detector (alert tier). P2 is the EXPERIMENTAL LSTM tier: advisory
+ *     only, off unless ANOMALY_ENABLE_P2=true, so it is normally absent/zero.
+ *     Keep it labelled separately, never folded into one flagged count.
+ *   - p2Enabled: whether the experimental tier is currently running
  */
 router.get("/summary", async (req, res) => {
     try {
@@ -75,6 +79,7 @@ router.get("/summary", async (req, res) => {
                 byDay: byDay.map((r) => ({ date: r._id, count: r.count })),
                 topActors: topActors.map((r) => ({ actorID: r._id.actorID, actorOrg: r._id.actorOrg, count: r.count })),
                 byPriority: Object.fromEntries(byPriority.map((r) => [r._id ?? "unknown", r.count])),
+                p2Enabled: isP2Enabled(),
                 scoreDistribution: [
                     { range: "0.0–0.2", count: buckets[0] },
                     { range: "0.2–0.4", count: buckets[1] },
