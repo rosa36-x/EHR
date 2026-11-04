@@ -1,0 +1,1037 @@
+<!doctype html>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.5.0/Chart.min.js"></script>
+<script>
+    function plotChart(divId, chartData) {
+        // Convert from stringified html, to valid JSON
+        const chartDetails = JSON.parse(chartData.replace(/&quot;/g,'"'));
+        new Chart(document.getElementById(divId), {
+            type: chartDetails.type,
+            data: {
+                labels: chartDetails.labels,
+                datasets: chartDetails.datasets
+            },
+            options: {
+                legend: { display: chartDetails.legend },
+                title: {
+                    display: true,
+                    text: chartDetails.title
+                }
+            }
+        });
+    }
+</script>
+<html>
+<head>
+    <title>Hyperledger Caliper Report</title>
+    <meta charset="UTF-8"/>
+    <style type="text/css">
+        .left-column {
+            position: fixed;
+            width:20%;
+        }
+        .left-column ul {
+            display: block;
+            padding: 0;
+            list-style: none;
+            border-bottom: 1px solid #d9d9d9;
+            font-size: 14px;
+        }
+        .left-column h2{
+            font-size: 24px;
+            font-weight: 400;
+            margin-block-end: 0.5em;
+        }
+        .left-column h3{
+            font-size: 18px;
+            font-weight: 400;
+            margin-block-end: 0.5em;
+        }
+        .left-column li{
+            margin-left: 10px;
+            margin-bottom: 5px;
+            color: #5e6b73;
+        }
+        .right-column {
+            margin-left: 22%;
+            width:60%;
+        }
+        .right-column table {
+            font-size:11px;
+            color:#333333;
+            border-width: 1px;
+            border-color: #666666;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        .right-column h2{
+            font-weight: 400;
+        }
+        .right-column h3{
+            font-weight: 400;
+        }
+        .right-column h4 {
+            font-weight: 400;
+            margin-block-end: 0;
+        }
+        .right-column th {
+            border-width: 1px;
+            font-size: small;
+            padding: 8px;
+            border-style: solid;
+            border-color: #666666;
+            background-color: #f2f2f2;
+        }
+        .right-column td {
+            border-width: 1px;
+            font-size: small;
+            padding: 8px;
+            border-style: solid;
+            border-color: #666666;
+            background-color: #ffffff;
+            font-weight: 400;
+        }
+        .tag {
+            margin-bottom: 10px;
+            padding: 5px 10px;
+        }
+        pre {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            background-color: #f2f2f2;
+            -webkit-border-radius: 5px;
+            -moz-border-radius: 5px;
+            -khtml-border-radius: 5px;
+            overflow:auto;
+            max-height:300px;
+            font-size:12px;
+        }
+        .charting {
+            display:flex;
+            flex-direction:row;
+            flex-wrap: wrap;
+            page-break-inside: auto;
+        }
+        .chart {
+            display:flex;
+            flex:1;
+            max-width: 50%;
+        }
+    </style>
+</head>
+<body style="font-family: IBM Plex Sans; font-weight: 200;">
+    <main>
+        <div class="left-column">
+            <img src="https://hyperledger.github.io/caliper/assets/img/hyperledger_caliper_logo_color.png" style="width:95%;" alt="">
+            <ul>
+                <h3>&nbspBasic information</h3>
+                <li>DLT: &nbsp<span style="font-weight: 500;">fabric</span></li>
+                <li>Name: &nbsp<span style="font-weight: 500;">MedVault Chaincode Benchmark</span></li>
+                <li>Description: &nbsp<span style="font-weight: 500;">Throughput&#x2F;latency benchmark: one read, three writes, dense TPS ramp (100 to 500) on every write operation for consistent, comparable saturation curves.
+</span></li>
+                <li>Benchmark Rounds: &nbsp<span style="font-weight: 500;">27</span></li>
+                <li><a href="#benchmarkInfo">Details</a></li>
+            </ul>
+            <ul>
+                <h3>&nbspBenchmark results</h3>
+                <li><a href="#benchmarksummary">Summary</a></li>
+                    <li><a href="#check_treatment_relationship_100tps">check_treatment_relationship_100tps</a></li>
+                    <li><a href="#check_treatment_relationship_200tps">check_treatment_relationship_200tps</a></li>
+                    <li><a href="#check_treatment_relationship_500tps">check_treatment_relationship_500tps</a></li>
+                    <li><a href="#create_treatment_relationship_100tps">create_treatment_relationship_100tps</a></li>
+                    <li><a href="#create_treatment_relationship_200tps">create_treatment_relationship_200tps</a></li>
+                    <li><a href="#create_treatment_relationship_250tps">create_treatment_relationship_250tps</a></li>
+                    <li><a href="#create_treatment_relationship_300tps">create_treatment_relationship_300tps</a></li>
+                    <li><a href="#create_treatment_relationship_350tps">create_treatment_relationship_350tps</a></li>
+                    <li><a href="#create_treatment_relationship_400tps">create_treatment_relationship_400tps</a></li>
+                    <li><a href="#create_treatment_relationship_450tps">create_treatment_relationship_450tps</a></li>
+                    <li><a href="#create_treatment_relationship_500tps">create_treatment_relationship_500tps</a></li>
+                    <li><a href="#create_consultation_100tps">create_consultation_100tps</a></li>
+                    <li><a href="#create_consultation_200tps">create_consultation_200tps</a></li>
+                    <li><a href="#create_consultation_250tps">create_consultation_250tps</a></li>
+                    <li><a href="#create_consultation_300tps">create_consultation_300tps</a></li>
+                    <li><a href="#create_consultation_350tps">create_consultation_350tps</a></li>
+                    <li><a href="#create_consultation_400tps">create_consultation_400tps</a></li>
+                    <li><a href="#create_consultation_450tps">create_consultation_450tps</a></li>
+                    <li><a href="#create_consultation_500tps">create_consultation_500tps</a></li>
+                    <li><a href="#create_prescription_100tps">create_prescription_100tps</a></li>
+                    <li><a href="#create_prescription_200tps">create_prescription_200tps</a></li>
+                    <li><a href="#create_prescription_250tps">create_prescription_250tps</a></li>
+                    <li><a href="#create_prescription_300tps">create_prescription_300tps</a></li>
+                    <li><a href="#create_prescription_350tps">create_prescription_350tps</a></li>
+                    <li><a href="#create_prescription_400tps">create_prescription_400tps</a></li>
+                    <li><a href="#create_prescription_450tps">create_prescription_450tps</a></li>
+                    <li><a href="#create_prescription_500tps">create_prescription_500tps</a></li>
+            </ul>
+            <ul>
+                <h3>&nbspSystem under test</h3>
+                <li><a href="#sutdetails">Details</a></li>
+            </ul>
+        </div>
+
+        <div class="right-column">
+            <h1 style="padding-top: 3em; font-weight: 500;">Caliper report</h1>
+            <div style="border-bottom: 1px solid #d9d9d9; margin-bottom: 10px;" id="benchmarksummary">
+                <table style="min-width: 100%;">
+                    <h3>Summary of performance metrics</h3>
+                    <tr>
+                         <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                    </tr>
+
+                    <tr>
+                         <td>check_treatment_relationship_100tps</td> <td>500</td> <td>0</td> <td>100.8</td> <td>0.30</td> <td>0.12</td> <td>0.17</td> <td>97.5</td>
+                    </tr>
+                    <tr>
+                         <td>check_treatment_relationship_200tps</td> <td>1000</td> <td>0</td> <td>200.8</td> <td>0.53</td> <td>0.17</td> <td>0.26</td> <td>192.1</td>
+                    </tr>
+                    <tr>
+                         <td>check_treatment_relationship_500tps</td> <td>1500</td> <td>0</td> <td>488.9</td> <td>2.64</td> <td>0.96</td> <td>2.10</td> <td>330.2</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_100tps</td> <td>500</td> <td>0</td> <td>87.7</td> <td>7.65</td> <td>0.85</td> <td>4.64</td> <td>49.3</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_200tps</td> <td>600</td> <td>0</td> <td>134.3</td> <td>6.84</td> <td>0.25</td> <td>4.21</td> <td>56.0</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_250tps</td> <td>700</td> <td>0</td> <td>117.8</td> <td>7.64</td> <td>0.34</td> <td>5.70</td> <td>62.4</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_300tps</td> <td>700</td> <td>0</td> <td>130.9</td> <td>7.07</td> <td>0.47</td> <td>4.92</td> <td>62.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_350tps</td> <td>700</td> <td>0</td> <td>133.3</td> <td>7.83</td> <td>1.47</td> <td>5.72</td> <td>69.1</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_400tps</td> <td>800</td> <td>0</td> <td>215.6</td> <td>7.79</td> <td>0.76</td> <td>5.56</td> <td>75.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_450tps</td> <td>800</td> <td>0</td> <td>157.3</td> <td>7.15</td> <td>0.66</td> <td>4.95</td> <td>79.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_treatment_relationship_500tps</td> <td>800</td> <td>0</td> <td>436.2</td> <td>10.42</td> <td>0.90</td> <td>6.60</td> <td>72.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_100tps</td> <td>500</td> <td>0</td> <td>100.5</td> <td>1.28</td> <td>0.21</td> <td>0.83</td> <td>87.7</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_200tps</td> <td>600</td> <td>0</td> <td>199.1</td> <td>3.11</td> <td>0.30</td> <td>1.91</td> <td>101.5</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_250tps</td> <td>700</td> <td>0</td> <td>215.5</td> <td>4.26</td> <td>0.39</td> <td>2.97</td> <td>95.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_300tps</td> <td>700</td> <td>0</td> <td>215.7</td> <td>4.73</td> <td>0.38</td> <td>3.30</td> <td>95.2</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_350tps</td> <td>700</td> <td>0</td> <td>229.1</td> <td>4.64</td> <td>0.27</td> <td>2.93</td> <td>98.4</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_400tps</td> <td>800</td> <td>0</td> <td>202.1</td> <td>7.51</td> <td>0.31</td> <td>4.19</td> <td>80.7</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_450tps</td> <td>800</td> <td>0</td> <td>186.0</td> <td>4.96</td> <td>0.33</td> <td>3.52</td> <td>95.3</td>
+                    </tr>
+                    <tr>
+                         <td>create_consultation_500tps</td> <td>800</td> <td>0</td> <td>211.0</td> <td>5.75</td> <td>0.27</td> <td>4.17</td> <td>90.2</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_100tps</td> <td>500</td> <td>0</td> <td>100.5</td> <td>3.72</td> <td>0.29</td> <td>1.89</td> <td>65.3</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_200tps</td> <td>600</td> <td>0</td> <td>164.0</td> <td>6.65</td> <td>0.59</td> <td>4.48</td> <td>67.1</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_250tps</td> <td>700</td> <td>0</td> <td>232.9</td> <td>5.97</td> <td>0.41</td> <td>4.12</td> <td>82.7</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_300tps</td> <td>700</td> <td>0</td> <td>195.5</td> <td>6.51</td> <td>0.54</td> <td>4.55</td> <td>80.9</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_350tps</td> <td>700</td> <td>0</td> <td>178.4</td> <td>5.33</td> <td>0.31</td> <td>3.47</td> <td>91.3</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_400tps</td> <td>800</td> <td>0</td> <td>401.6</td> <td>8.68</td> <td>0.74</td> <td>5.22</td> <td>83.3</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_450tps</td> <td>800</td> <td>0</td> <td>187.8</td> <td>5.98</td> <td>0.30</td> <td>4.06</td> <td>88.6</td>
+                    </tr>
+                    <tr>
+                         <td>create_prescription_500tps</td> <td>800</td> <td>0</td> <td>232.2</td> <td>6.36</td> <td>0.39</td> <td>4.01</td> <td>90.0</td>
+                    </tr>
+                </table>
+            </div>
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="check_treatment_relationship_100tps">
+                <h2>Benchmark round: check_treatment_relationship_100tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 100
+</pre>
+                        <h3>Performance metrics for check_treatment_relationship_100tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>check_treatment_relationship_100tps</td> <td>500</td> <td>0</td> <td>100.8</td> <td>0.30</td> <td>0.12</td> <td>0.17</td> <td>97.5</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for check_treatment_relationship_100tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="check_treatment_relationship_200tps">
+                <h2>Benchmark round: check_treatment_relationship_200tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 200
+</pre>
+                        <h3>Performance metrics for check_treatment_relationship_200tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>check_treatment_relationship_200tps</td> <td>1000</td> <td>0</td> <td>200.8</td> <td>0.53</td> <td>0.17</td> <td>0.26</td> <td>192.1</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for check_treatment_relationship_200tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="check_treatment_relationship_500tps">
+                <h2>Benchmark round: check_treatment_relationship_500tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 500
+</pre>
+                        <h3>Performance metrics for check_treatment_relationship_500tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>check_treatment_relationship_500tps</td> <td>1500</td> <td>0</td> <td>488.9</td> <td>2.64</td> <td>0.96</td> <td>2.10</td> <td>330.2</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for check_treatment_relationship_500tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_100tps">
+                <h2>Benchmark round: create_treatment_relationship_100tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 100
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_100tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_100tps</td> <td>500</td> <td>0</td> <td>87.7</td> <td>7.65</td> <td>0.85</td> <td>4.64</td> <td>49.3</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_100tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_200tps">
+                <h2>Benchmark round: create_treatment_relationship_200tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 200
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_200tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_200tps</td> <td>600</td> <td>0</td> <td>134.3</td> <td>6.84</td> <td>0.25</td> <td>4.21</td> <td>56.0</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_200tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_250tps">
+                <h2>Benchmark round: create_treatment_relationship_250tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 250
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_250tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_250tps</td> <td>700</td> <td>0</td> <td>117.8</td> <td>7.64</td> <td>0.34</td> <td>5.70</td> <td>62.4</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_250tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_300tps">
+                <h2>Benchmark round: create_treatment_relationship_300tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 300
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_300tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_300tps</td> <td>700</td> <td>0</td> <td>130.9</td> <td>7.07</td> <td>0.47</td> <td>4.92</td> <td>62.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_300tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_350tps">
+                <h2>Benchmark round: create_treatment_relationship_350tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 350
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_350tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_350tps</td> <td>700</td> <td>0</td> <td>133.3</td> <td>7.83</td> <td>1.47</td> <td>5.72</td> <td>69.1</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_350tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_400tps">
+                <h2>Benchmark round: create_treatment_relationship_400tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 400
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_400tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_400tps</td> <td>800</td> <td>0</td> <td>215.6</td> <td>7.79</td> <td>0.76</td> <td>5.56</td> <td>75.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_400tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_450tps">
+                <h2>Benchmark round: create_treatment_relationship_450tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 450
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_450tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_450tps</td> <td>800</td> <td>0</td> <td>157.3</td> <td>7.15</td> <td>0.66</td> <td>4.95</td> <td>79.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_450tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_treatment_relationship_500tps">
+                <h2>Benchmark round: create_treatment_relationship_500tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 500
+</pre>
+                        <h3>Performance metrics for create_treatment_relationship_500tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_treatment_relationship_500tps</td> <td>800</td> <td>0</td> <td>436.2</td> <td>10.42</td> <td>0.90</td> <td>6.60</td> <td>72.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_treatment_relationship_500tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_100tps">
+                <h2>Benchmark round: create_consultation_100tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 100
+</pre>
+                        <h3>Performance metrics for create_consultation_100tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_100tps</td> <td>500</td> <td>0</td> <td>100.5</td> <td>1.28</td> <td>0.21</td> <td>0.83</td> <td>87.7</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_100tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_200tps">
+                <h2>Benchmark round: create_consultation_200tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 200
+</pre>
+                        <h3>Performance metrics for create_consultation_200tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_200tps</td> <td>600</td> <td>0</td> <td>199.1</td> <td>3.11</td> <td>0.30</td> <td>1.91</td> <td>101.5</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_200tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_250tps">
+                <h2>Benchmark round: create_consultation_250tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 250
+</pre>
+                        <h3>Performance metrics for create_consultation_250tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_250tps</td> <td>700</td> <td>0</td> <td>215.5</td> <td>4.26</td> <td>0.39</td> <td>2.97</td> <td>95.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_250tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_300tps">
+                <h2>Benchmark round: create_consultation_300tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 300
+</pre>
+                        <h3>Performance metrics for create_consultation_300tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_300tps</td> <td>700</td> <td>0</td> <td>215.7</td> <td>4.73</td> <td>0.38</td> <td>3.30</td> <td>95.2</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_300tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_350tps">
+                <h2>Benchmark round: create_consultation_350tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 350
+</pre>
+                        <h3>Performance metrics for create_consultation_350tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_350tps</td> <td>700</td> <td>0</td> <td>229.1</td> <td>4.64</td> <td>0.27</td> <td>2.93</td> <td>98.4</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_350tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_400tps">
+                <h2>Benchmark round: create_consultation_400tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 400
+</pre>
+                        <h3>Performance metrics for create_consultation_400tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_400tps</td> <td>800</td> <td>0</td> <td>202.1</td> <td>7.51</td> <td>0.31</td> <td>4.19</td> <td>80.7</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_400tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_450tps">
+                <h2>Benchmark round: create_consultation_450tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 450
+</pre>
+                        <h3>Performance metrics for create_consultation_450tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_450tps</td> <td>800</td> <td>0</td> <td>186.0</td> <td>4.96</td> <td>0.33</td> <td>3.52</td> <td>95.3</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_450tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_consultation_500tps">
+                <h2>Benchmark round: create_consultation_500tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 500
+</pre>
+                        <h3>Performance metrics for create_consultation_500tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_consultation_500tps</td> <td>800</td> <td>0</td> <td>211.0</td> <td>5.75</td> <td>0.27</td> <td>4.17</td> <td>90.2</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_consultation_500tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_100tps">
+                <h2>Benchmark round: create_prescription_100tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 100
+</pre>
+                        <h3>Performance metrics for create_prescription_100tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_100tps</td> <td>500</td> <td>0</td> <td>100.5</td> <td>3.72</td> <td>0.29</td> <td>1.89</td> <td>65.3</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_100tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_200tps">
+                <h2>Benchmark round: create_prescription_200tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 200
+</pre>
+                        <h3>Performance metrics for create_prescription_200tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_200tps</td> <td>600</td> <td>0</td> <td>164.0</td> <td>6.65</td> <td>0.59</td> <td>4.48</td> <td>67.1</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_200tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_250tps">
+                <h2>Benchmark round: create_prescription_250tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 250
+</pre>
+                        <h3>Performance metrics for create_prescription_250tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_250tps</td> <td>700</td> <td>0</td> <td>232.9</td> <td>5.97</td> <td>0.41</td> <td>4.12</td> <td>82.7</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_250tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_300tps">
+                <h2>Benchmark round: create_prescription_300tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 300
+</pre>
+                        <h3>Performance metrics for create_prescription_300tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_300tps</td> <td>700</td> <td>0</td> <td>195.5</td> <td>6.51</td> <td>0.54</td> <td>4.55</td> <td>80.9</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_300tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_350tps">
+                <h2>Benchmark round: create_prescription_350tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 350
+</pre>
+                        <h3>Performance metrics for create_prescription_350tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_350tps</td> <td>700</td> <td>0</td> <td>178.4</td> <td>5.33</td> <td>0.31</td> <td>3.47</td> <td>91.3</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_350tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_400tps">
+                <h2>Benchmark round: create_prescription_400tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 400
+</pre>
+                        <h3>Performance metrics for create_prescription_400tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_400tps</td> <td>800</td> <td>0</td> <td>401.6</td> <td>8.68</td> <td>0.74</td> <td>5.22</td> <td>83.3</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_400tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_450tps">
+                <h2>Benchmark round: create_prescription_450tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 450
+</pre>
+                        <h3>Performance metrics for create_prescription_450tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_450tps</td> <td>800</td> <td>0</td> <td>187.8</td> <td>5.98</td> <td>0.30</td> <td>4.06</td> <td>88.6</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_450tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;" id="create_prescription_500tps">
+                <h2>Benchmark round: create_prescription_500tps</h2>
+                <p></p>
+                <pre style="overflow: visible;white-space: pre-wrap;max-height:100%;">rateControl:
+  type: fixed-rate
+  opts:
+    tps: 500
+</pre>
+                        <h3>Performance metrics for create_prescription_500tps</h3>
+                            <table style="min-width: 100%;">
+                                <tr>
+                                     <th>Name</th> <th>Succ</th> <th>Fail</th> <th>Send Rate (TPS)</th> <th>Max Latency (s)</th> <th>Min Latency (s)</th> <th>Avg Latency (s)</th> <th>Throughput (TPS)</th>
+                                </tr>
+                                <tr>
+                                     <td>create_prescription_500tps</td> <td>800</td> <td>0</td> <td>232.2</td> <td>6.36</td> <td>0.39</td> <td>4.01</td> <td>90.0</td>
+                                </tr>
+                            </table>
+                        <h3>Resource utilization for create_prescription_500tps</h3>
+            </div>
+
+            <div style="border-bottom: 1px solid #d9d9d9; padding-bottom: 10px;">
+                <h2>Test Environment</h2>
+                <h3>benchmark config</h3>
+                <pre id="benchmarkInfo" style="overflow: visible;white-space: pre-wrap;max-height:100%;">name: MedVault Chaincode Benchmark
+description: &gt;
+  Throughput&#x2F;latency benchmark: one read, three writes, dense TPS ramp (100 to
+  500) on every write operation for consistent, comparable saturation curves.
+workers:
+  number: 4
+rounds:
+  - label: check_treatment_relationship_100tps
+    txNumber: 500
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 100
+    workload:
+      module: .&#x2F;workloads&#x2F;checkTreatmentRelationship.js
+  - label: check_treatment_relationship_200tps
+    txNumber: 1000
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 200
+    workload:
+      module: .&#x2F;workloads&#x2F;checkTreatmentRelationship.js
+  - label: check_treatment_relationship_500tps
+    txNumber: 1500
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 500
+    workload:
+      module: .&#x2F;workloads&#x2F;checkTreatmentRelationship.js
+  - label: create_treatment_relationship_100tps
+    txNumber: 500
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 100
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_200tps
+    txNumber: 600
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 200
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_250tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 250
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_300tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 300
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_350tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 350
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_400tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 400
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_450tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 450
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_treatment_relationship_500tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 500
+    workload:
+      module: .&#x2F;workloads&#x2F;createTreatmentRelationship.js
+  - label: create_consultation_100tps
+    txNumber: 500
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 100
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_200tps
+    txNumber: 600
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 200
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_250tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 250
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_300tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 300
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_350tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 350
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_400tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 400
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_450tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 450
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_consultation_500tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 500
+    workload:
+      module: .&#x2F;workloads&#x2F;createConsultation.js
+  - label: create_prescription_100tps
+    txNumber: 500
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 100
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_200tps
+    txNumber: 600
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 200
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_250tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 250
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_300tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 300
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_350tps
+    txNumber: 700
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 350
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_400tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 400
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_450tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 450
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+  - label: create_prescription_500tps
+    txNumber: 800
+    rateControl:
+      type: fixed-rate
+      opts:
+        tps: 500
+    workload:
+      module: .&#x2F;workloads&#x2F;createPrescription.js
+</pre>
+                <h3>SUT</h3>
+                <pre id="sutdetails">not provided</pre>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
